@@ -7,7 +7,7 @@ const VendorState = { filter: 'aktif', q: '' };
 function vData() {
   const d = App.data;
   const today = App.today;
-  return d.acara.map((a) => {
+  return d.acara.filter((a) => !a.nonaktif).map((a) => {
     const items = d.pesanan.filter((p) => p.id_acara === a.id_acara);
     const av = d.fin.av.find((x) => x.id_acara === a.id_acara) || { tagihan: 0, dibayar: 0, sisa: 0, status: '-', terpasang: 0, jumlah_item: 0 };
     const pays = d.alokasi.filter((al) => al.id_acara === a.id_acara).map((al) => Object.assign({}, App.maps.pembayaran[al.id_pembayaran] || {}, { porsi: al.nominal }));
@@ -165,7 +165,7 @@ const VendorViews = {
   contactBtn() {
     const wa = App.data.settings.kontak_admin_wa;
     if (!wa) return '';
-    return `<a class="btn wa-btn btn-lg btn-block section" style="margin-top:22px" href="${waLink(wa, 'Assalamu\'alaikum Ustadz, saya ' + App.data.user.nama + ' dari ' + ((App.data.vendor[0] || {}).nama_vendor || '') + '. ')}" target="_blank" rel="noopener">${ic('chat', 18)} Hubungi Ustadz Bagian Acara (WhatsApp)</a>
+    return `<a class="btn wa-btn btn-lg btn-block section" style="margin-top:22px" href="${waLink(wa, 'Assalamu\'alaikum Ustadz, saya ' + App.data.user.nama + ' dari ' + ((App.data.vendor[0] || {}).nama_vendor || '') + '. ')}" target="_blank" rel="noopener">${ic('chat', 18)} Hubungi Ustadz PJ. Vendor (WhatsApp)</a>
       <div class="center xs muted" style="margin-top:8px">Layanan Resmi Bagian Perlengkapan Acara • ${esc(App.data.settings.nama_kampus || '')}</div>`;
   }
 };

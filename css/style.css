@@ -293,7 +293,7 @@ img { max-width: 100%; }
   position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 12px; padding: 14px 32px;
   background: var(--glass); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border-bottom: 1px solid var(--border);
 }
-.search { position: relative; flex: 1; max-width: 460px; }
+.search { position: relative; flex: 1; max-width: 520px; }
 .search input { width: 100%; height: 42px; border-radius: 12px; border: 1px solid var(--border); background: var(--card-2); padding: 0 14px 0 40px; outline: none; transition: border-color .2s, box-shadow .2s; }
 .search input:focus { border-color: var(--mint); box-shadow: 0 0 0 4px rgba(16, 185, 129, .15); background: var(--card); }
 .search .ic { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--text-3); }
@@ -309,7 +309,7 @@ img { max-width: 100%; }
 .topbar .spacer { flex: 1; }
 .top-brand { display: none; align-items: center; gap: 10px; min-width: 0; }
 
-.view { padding: 28px 32px 48px; max-width: 1440px; width: 100%; margin: 0 auto; flex: 1; }
+.view { padding: 28px 32px 48px; max-width: 1600px; width: 100%; margin: 0 auto; flex: 1; }
 
 /* Bottom nav (HP) */
 .bottom-nav { display: none; }
@@ -395,6 +395,8 @@ img { max-width: 100%; }
 .ev-list { display: flex; flex-direction: column; gap: 16px; }
 .ev-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--sh-1); padding: 20px; display: flex; gap: 18px; align-items: flex-start; transition: transform .25s var(--ease), box-shadow .25s, border-color .2s; cursor: pointer; }
 .ev-card:hover { transform: translateY(-2px); box-shadow: var(--sh-2); border-color: var(--border-2); }
+.ev-card.off { opacity: .62; border-style: dashed; }
+.ev-card.off .date-blk { background: var(--th-bg); color: var(--text-3); box-shadow: none; }
 .date-blk { width: 58px; min-width: 58px; border-radius: 14px; background: var(--primary); color: #fff; text-align: center; padding: 8px 0; box-shadow: 0 8px 18px -8px rgba(27, 77, 62, .6); }
 .date-blk .m { font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; opacity: .8; font-family: var(--font-head); }
 .date-blk .d { font-size: 22px; font-weight: 800; line-height: 1.1; font-family: var(--font-head); }
@@ -596,8 +598,13 @@ img { max-width: 100%; }
   .topbar { padding: 10px 16px; padding-top: max(10px, env(safe-area-inset-top)); }
   .topbar .search, .topbar .top-pill, .user-chip .stack { display: none; }
   .user-chip { padding: 2px; border: 0; background: none; }
-  .top-brand { display: flex; flex: 1; }
+  .top-brand { display: flex; flex: 1; min-width: 0; }
   .top-brand .brand-name { font-size: 15px; }
+  .top-brand > .stack { flex: 1; min-width: 0; }
+  .topbar { gap: 8px; }
+  .topbar .spacer { display: none; }
+  .topbar .top-theme { display: none; }   /* tema tersedia di menu Profil / Lainnya */
+  .topbar .icon-btn { width: 38px; height: 38px; border-radius: 11px; }
   .view { padding: 18px 16px calc(110px + env(safe-area-inset-bottom)); }
   .bottom-nav {
     display: flex; position: fixed; z-index: 50; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom));

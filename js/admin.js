@@ -13,7 +13,7 @@ const KAT_ICON = { 'Tenda & Terop': 'tent', Panggung: 'layers', 'Rigging & Truss
 const AdminState = {
   homeTab: 'vendor',
   detailTab: 'barang',
-  acaraFilter: { q: '', tahun: String(new Date().getFullYear()), status: '', bayar: '', setoran: '' },
+  acaraFilter: { q: '', tahun: String(new Date().getFullYear()), status: '', bayar: '', setoran: '', nonaktif: false },
   pesananFilter: { acara: '', vendor: '', status: '' },
   katalogFilter: { vendor: '', kategori: '', nonaktif: false },
   dokJenis: ''
@@ -22,9 +22,10 @@ const AdminState = {
 /* ---------- Data turunan ---------- */
 const D = () => App.data;
 const ambang = () => num(D().settings.ambang_hari) || 14;
-function acaraAktif() { return D().acara.filter((a) => a.status_acara !== 'Batal'); }
+function isOff(a) { return !a || a.status_acara === 'Batal' || a.nonaktif; }
+function acaraAktif() { return D().acara.filter((a) => !isOff(a)); }
 function tagihanList() {
-  return D().fin.av.filter((x) => x.sisa > 0 && App.acara(x.id_acara).status_acara !== 'Batal').sort((a, b) => b.umur - a.umur || a.tgl_ref.localeCompare(b.tgl_ref));
+  return D().fin.av.filter((x) => x.sisa > 0 && !isOff(App.maps.acara[x.id_acara])).sort((a, b) => b.umur - a.umur || a.tgl_ref.localeCompare(b.tgl_ref));
 }
 function setoranKurangList() {
   return acaraAktif().map((a) => Object.assign({ id_acara: a.id_acara }, App.finA(a.id_acara)))
@@ -38,7 +39,7 @@ function jadwalUpcoming(days) {
   const today = App.today, end = addDays(today, days), ev = {};
   D().pesanan.forEach((p) => {
     const a = App.acara(p.id_acara);
-    if (a.status_acara === 'Batal') return;
+    if (isOff(a)) return;
     [['Pasang', p.tanggal_pasang], ['Bongkar', p.tanggal_bongkar]].forEach(([tahap, t]) => {
       if (!isYMD(t) || t < today || t > end) return;
       const k = [p.id_acara, p.id_vendor, tahap, t].join('|');
@@ -51,7 +52,7 @@ function jadwalUpcoming(days) {
 }
 function konsumsiDue() {
   const today = App.today, besok = addDays(today, 1);
-  return D().konsumsi.filter((k) => k.tanggal === today || k.tanggal === besok)
+  return D().konsumsi.filter((k) => (k.tanggal === today || k.tanggal === besok) && !isOff(App.maps.acara[k.id_acara]))
     .sort((a, b) => Number(a.sudah_diingatkan) - Number(b.sudah_diingatkan) || (a.tanggal + a.jam).localeCompare(b.tanggal + b.jam));
 }
 function rekomendasiKonsumsi(durasi, kesulitan) {
@@ -61,20 +62,60 @@ function rekomendasiKonsumsi(durasi, kesulitan) {
   lv = Math.max(lv, { Ringan: 0, Sedang: 1, Berat: 2 }[kesulitan] ?? 1);
   return [st.konsumsi_ringan, st.konsumsi_sedang, st.konsumsi_berat][lv];
 }
-function konsumsiText(k) {
+/* ---------- Format pesan WhatsApp (bisa diedit Admin) ---------- */
+const TPL_DEF = {
+  konsumsi: {
+    key: 'tpl_konsumsi', label: 'Pengingat Konsumsi Pekerja', icon: 'utensils',
+    def: "Assalamu'alaikum warahmatullah, Ustadz {panitia}.\nMohon disiapkan konsumsi untuk {jumlah_pekerja} kru {vendor} yang akan {kegiatan} perlengkapan *{acara}* pada {tanggal} pukul {jam} di {lokasi}.\nPerkiraan durasi {durasi} jam ({kesulitan}).\nRekomendasi: {rekomendasi}.\nMari memuliakan pekerja sebelum keringatnya kering. Jazakumullah khairan.",
+    vars: { panitia: 'Nama panitia (PJ)', acara: 'Nama acara', vendor: 'Nama vendor', kegiatan: 'memasang / membongkar', tanggal: 'Hari & tanggal kegiatan', jam: 'Jam mulai (mis. 08:00 WIB)', lokasi: 'Lokasi acara', jumlah_pekerja: 'Jumlah pekerja', durasi: 'Perkiraan durasi (jam)', kesulitan: 'Ringan / Sedang / Berat', rekomendasi: 'Rekomendasi konsumsi', admin: 'Nama Admin' }
+  },
+  tagih: {
+    key: 'tpl_tagih_setoran', label: 'Tagihan Setoran ke Panitia', icon: 'coins',
+    def: "Assalamu'alaikum warahmatullah, Ustadz {panitia}.\nMengingatkan setoran biaya perlengkapan acara *{acara}* ({tanggal_acara}).\n• Total biaya riil: {biaya}\n• Sudah disetor: {sudah_setor}\n• Kekurangan: *{kekurangan}*\nNota dari vendor dapat kami sampaikan. Jazakumullah khairan.\n— {admin}",
+    vars: { panitia: 'Nama panitia (PJ)', acara: 'Nama acara', tanggal_acara: 'Tanggal acara', biaya: 'Total biaya riil', sudah_setor: 'Total sudah disetor', kekurangan: 'Kekurangan setoran', talangan: 'Nominal yang ditalangi Admin', admin: 'Nama Admin' }
+  },
+  akun: {
+    key: 'tpl_akun_vendor', label: 'Kirim Akun ke Vendor', icon: 'user',
+    def: "Assalamu'alaikum {pic}.\nBerikut akun Portal Vendor Event Management Gontor 3:\n• Alamat: {link}\n• Username: {username}\n• Kata sandi: {password}\nMohon dijaga kerahasiaannya. Jazakumullah khairan.",
+    vars: { pic: 'Nama PIC vendor', vendor: 'Nama vendor', link: 'Alamat aplikasi', username: 'Username', password: 'Kata sandi', admin: 'Nama Admin' }
+  }
+};
+function getTpl(type) { const t = TPL_DEF[type]; return (D().settings[t.key] || t.def); }
+function fillTpl(tpl, vars) { return String(tpl).replace(/\{(\w+)\}/g, (m, k) => (vars[k] !== undefined ? String(vars[k]) : m)); }
+function varsKonsumsi(k) {
   const a = App.acara(k.id_acara);
-  return `Assalamu'alaikum warahmatullah, Ustadz ${a.nama_panitia || 'Panitia'}.\n` +
-    `Mohon disiapkan konsumsi untuk ${k.jumlah_pekerja || 'para'} kru ${App.vName(k.id_vendor)} yang akan ${k.tahap === 'Pasang' ? 'memasang' : 'membongkar'} perlengkapan *${a.nama_acara}* ` +
-    `pada ${tglPanjang(k.tanggal)}${k.jam ? ' pukul ' + k.jam + ' WIB' : ''}${a.lokasi ? ' di ' + a.lokasi : ''}.\n` +
-    `Perkiraan durasi ${k.durasi_jam || '-'} jam (${k.kesulitan}).\nRekomendasi: ${k.rekomendasi}.\n` +
-    `Mari memuliakan pekerja sebelum keringatnya kering. Jazakumullah khairan.`;
+  return {
+    panitia: a.nama_panitia || 'Panitia', acara: a.nama_acara, vendor: App.vName(k.id_vendor), kegiatan: k.tahap === 'Pasang' ? 'memasang' : 'membongkar',
+    tanggal: tglPanjang(k.tanggal), jam: k.jam ? k.jam + ' WIB' : '-', lokasi: a.lokasi || '-', jumlah_pekerja: num(k.jumlah_pekerja) || 'para',
+    durasi: num(k.durasi_jam) || '-', kesulitan: k.kesulitan, rekomendasi: k.rekomendasi, admin: D().settings.nama_admin
+  };
 }
-function tagihSetoranText(ida) {
-  const a = App.acara(ida), f = App.finA(ida), st = D().settings;
-  return `Assalamu'alaikum warahmatullah, Ustadz ${a.nama_panitia || 'Panitia'}.\n` +
-    `Mengingatkan setoran biaya perlengkapan acara *${a.nama_acara}* (${tglRange(a.tanggal_mulai, a.tanggal_selesai)}).\n` +
-    `• Total biaya riil: ${rp(f.biaya)}\n• Sudah disetor: ${rp(f.setoran)}\n• Kekurangan: *${rp(f.kekurangan)}*\n` +
-    `Nota dari vendor dapat kami sampaikan. Jazakumullah khairan.\n— ${st.nama_admin}`;
+function varsTagih(ida) {
+  const a = App.acara(ida), f = App.finA(ida);
+  return {
+    panitia: a.nama_panitia || 'Panitia', acara: a.nama_acara, tanggal_acara: tglRange(a.tanggal_mulai, a.tanggal_selesai),
+    biaya: rp(f.biaya), sudah_setor: rp(f.setoran), kekurangan: rp(f.kekurangan), talangan: rp(f.talangan), admin: D().settings.nama_admin
+  };
+}
+function varsAkun(c) {
+  const v = App.maps.vendor[c.id_vendor] || {};
+  return { pic: v.pic || '', vendor: v.nama_vendor || '', link: location.href.split('#')[0], username: c.username, password: c.password, admin: D().settings.nama_admin };
+}
+function sampleVars(type) {
+  if (type === 'konsumsi') {
+    const k = D().konsumsi[0];
+    return k ? varsKonsumsi(k) : { panitia: 'Ust. Rahmat', acara: 'Panggung Gembira', vendor: 'Berkah Jaya Tenda', kegiatan: 'memasang', tanggal: tglPanjang(addDays(App.today, 1)), jam: '08:00 WIB', lokasi: 'Lapangan Hijau', jumlah_pekerja: 8, durasi: 7, kesulitan: 'Berat', rekomendasi: D().settings.konsumsi_berat, admin: D().settings.nama_admin };
+  }
+  if (type === 'tagih') {
+    const x = setoranKurangList()[0];
+    return x ? varsTagih(x.id_acara) : { panitia: 'Ust. Fajar', acara: 'Panggung Gembira', tanggal_acara: tgl(App.today), biaya: rp(25500000), sudah_setor: rp(2000000), kekurangan: rp(23500000), talangan: rp(2000000), admin: D().settings.nama_admin };
+  }
+  return { pic: 'Pak Slamet', vendor: 'Berkah Jaya Tenda', link: location.href.split('#')[0], username: 'vendor1', password: 'abc12345', admin: D().settings.nama_admin };
+}
+function konsumsiText(k) { return fillTpl(getTpl('konsumsi'), varsKonsumsi(k)); }
+function tagihSetoranText(ida) { return fillTpl(getTpl('tagih'), varsTagih(ida)); }
+function tplBtn(type, ref, label = 'Edit Format', cls = 'btn-ghost btn-sm') {
+  return `<button type="button" class="btn ${cls}" data-act="wa-tpl" data-tpl="${type}" ${ref ? `data-ref="${esc(ref)}"` : ''} title="Ubah format pesan WhatsApp">${ic('edit', 14)} ${label}</button>`;
 }
 function waBtn(phone, text, label = 'Kirim WA', cls = 'btn-sm') {
   return `<a class="btn wa-btn ${cls}" href="${waLink(phone, text)}" target="_blank" rel="noopener">${ic('chat', 15)} ${label}</a>`;
@@ -83,8 +124,8 @@ function vendorOpts(val, placeholder = 'Pilih vendor', onlyActive = true) {
   return selectOpts(D().vendor.filter((v) => !onlyActive || v.aktif || v.id_vendor === val).map((v) => ({ value: v.id_vendor, label: v.nama_vendor })), val, placeholder);
 }
 function acaraOpts(val, placeholder = 'Pilih acara') {
-  const list = D().acara.slice().sort((a, b) => b.tanggal_mulai.localeCompare(a.tanggal_mulai));
-  return selectOpts(list.map((a) => ({ value: a.id_acara, label: a.nama_acara + ' — ' + tgl(a.tanggal_mulai) + (a.status_acara === 'Batal' ? ' (Batal)' : '') })), val, placeholder);
+  const list = D().acara.filter((a) => !a.nonaktif || a.id_acara === val).sort((a, b) => b.tanggal_mulai.localeCompare(a.tanggal_mulai));
+  return selectOpts(list.map((a) => ({ value: a.id_acara, label: a.nama_acara + ' — ' + tgl(a.tanggal_mulai) + (a.status_acara === 'Batal' ? ' (Batal)' : '') + (a.nonaktif ? ' (Nonaktif)' : '') })), val, placeholder);
 }
 function uploadBox(id, label, sub, accept = 'image/*,application/pdf', multiple = false) {
   return `<label class="upload" id="${id}-box"><span class="u-ic">${ic('upload', 20)}</span><span class="grow" style="min-width:0"><span class="u-t ellipsis" id="${id}-t" style="display:block">${label}</span><span class="u-s" id="${id}-s">${sub}</span></span><input type="file" id="${id}" accept="${accept}" ${multiple ? 'multiple' : ''}></label>`;
@@ -95,7 +136,8 @@ document.addEventListener('change', (e) => {
     const f = inp.files[0];
     const t = document.getElementById(inp.id + '-t'), s = document.getElementById(inp.id + '-s');
     inp.closest('.upload').classList.toggle('has', !!f);
-    if (f && t) { t.textContent = f.name; s.textContent = (f.size / 1024 / 1024).toFixed(2) + ' MB • siap diunggah'; }
+    if (f && t) t.textContent = f.name;
+    if (f && s) s.textContent = (f.size / 1024 / 1024).toFixed(2) + ' MB • siap diunggah';
   }
 });
 function fileLink(idBerkas, label, title) {
@@ -139,7 +181,7 @@ AdminViews.beranda = {
         <div class="kpi-label">Tagihan Vendor Belum Lunas</div>
         <div class="kpi-value">${countEl(t.sisa)}</div>
         <div class="kpi-sub">${ic('alertCircle', 14)} Harus dibayarkan ke ${vendorTertagih} vendor mitra</div>
-        <div class="kpi-foot"><span>Tertua: ${tag[0] ? tag[0].umur + ' hari' : '-'}</span><span class="tx-bad">${tag[0] ? esc(App.acara(tag[0].id_acara).nama_acara) : ''}</span></div>
+        <div class="kpi-foot"><span>Jatuh tempo: ${tag[0] ? (tag[0].umur > amb ? 'lewat ' + (tag[0].umur - amb) + ' hari' : tag[0].umur === amb ? 'hari ini' : tag[0].umur ? (amb - tag[0].umur) + ' hari lagi' : 'belum') : '-'}</span><span class="tx-bad">${tag[0] ? esc(App.acara(tag[0].id_acara).nama_acara) : ''}</span></div>
       </div>
       <div class="kpi" style="--i:1">
         <div class="kpi-top"><span class="kpi-ic">${ic('wallet', 22)}</span><span class="badge b-ok">Kas Siap Salur</span></div>
@@ -167,7 +209,7 @@ AdminViews.beranda = {
     <div class="card section">
       <div class="card-head">
         <div><h3><span class="card-title-ic red">${ic('alertCircle', 18)}</span>Tagihan Vendor & Setoran Panitia Perlu Segera Ditagih</h3>
-        <p>Diurutkan dari yang paling lama. Penanda merah berarti sudah ≥ ${amb} hari sejak acara selesai/dibongkar.</p></div>
+        <p>Diurutkan dari yang paling lama. Jatuh tempo = ${amb} hari setelah acara selesai/dibongkar (atur di Pengaturan); penanda merah berarti sudah lewat jatuh tempo.</p></div>
         <div class="tabs">
           ${[['vendor', 'Tagihan Vendor'], ['setoran', 'Setoran Panitia'], ['talangan', 'Ditalangi']].map(([k, l]) =>
             `<button class="chip ${AdminState.homeTab === k ? 'active' : ''}" data-act="home-tab" data-tab="${k}">${l} <span class="cnt">${counts[k]}</span></button>`).join('')}
@@ -236,7 +278,7 @@ AdminViews.beranda = {
           { key: 'acara', label: 'Acara & Rekanan Vendor', main: true, sortVal: (r) => App.acara(r.id_acara).nama_acara, render: (r) => `<div class="row" style="gap:12px"><span class="t-ic">${ic('tent', 19)}</span><div style="min-width:0"><div class="t-main">${esc(App.acara(r.id_acara).nama_acara)}</div><div class="t-sub">${ic('store', 13)} ${esc(App.vName(r.id_vendor))}</div></div></div>` },
           { key: 'sisa', label: 'Sisa Tagihan Vendor', render: (r) => `<div class="stack" style="gap:0;align-items:inherit"><b class="tnum">${rp(r.sisa)}</b><span class="xs muted">dari ${rp(r.tagihan)}</span></div>` },
           { key: 'setoran', label: 'Status Setoran Panitia', sort: false, render: (r) => { const f = App.finA(r.id_acara); return f.talangan > 0 ? badge('Ditalangi ' + rpShort(f.talangan), 'b-bad') : f.kekurangan > 0 ? `<span class="tx-bad small bold">Kurang ${rp(f.kekurangan)}</span>` : badge('Lunas disetor', 'b-ok'); } },
-          { key: 'umur', label: 'Umur (Aging)', render: (r) => agingPill(r.umur, amb) },
+          { key: 'umur', label: 'Jatuh Tempo', render: (r) => agingPill(r.umur, amb) },
           { key: '', label: 'Tindakan', acts: true, sort: false, render: (r) => `<div class="acts"><button class="btn btn-primary btn-sm" data-act="new-bayar" data-vendor="${r.id_vendor}" data-acara="${r.id_acara}">${ic('wallet', 14)} Bayar</button><button class="btn btn-soft btn-sm" data-act="open-acara" data-id="${r.id_acara}">Detail</button></div>` }
         ]
       });
@@ -246,6 +288,7 @@ AdminViews.beranda = {
       rows: list, pageSize: 8,
       empty: emptyState(tab === 'setoran' ? 'Semua panitia sudah menyetor' : 'Tidak ada acara yang ditalangi', '', 'checkCircle'),
       search: (r) => App.acara(r.id_acara).nama_acara + ' ' + App.acara(r.id_acara).nama_panitia, placeholder: 'Cari acara / panitia...',
+      tools: tplBtn('tagih', '', 'Edit Format WA Tagihan', 'btn-soft btn-sm'),
       cols: [
         { key: 'acara', label: 'Acara & Panitia', main: true, sortVal: (r) => App.acara(r.id_acara).nama_acara, render: (r) => { const a = App.acara(r.id_acara); return `<div class="row" style="gap:12px"><span class="t-ic">${ic('users', 18)}</span><div style="min-width:0"><div class="t-main">${esc(a.nama_acara)}</div><div class="t-sub">PJ: ${esc(a.nama_panitia || '-')}</div></div></div>`; } },
         { key: 'biaya', label: 'Biaya Riil', align: 'r', render: (r) => `<span class="tnum">${rp(r.biaya)}</span>` },
@@ -255,7 +298,7 @@ AdminViews.beranda = {
         tab === 'setoran'
           ? { key: 'kekurangan', label: 'Kekurangan', align: 'r', render: (r) => `<b class="tnum tx-bad">${rp(r.kekurangan)}</b>` }
           : { key: 'talangan', label: 'Talangan Admin', align: 'r', render: (r) => `<b class="tnum tx-bad">${rp(r.talangan)}</b>` },
-        { key: 'umur', label: 'Umur', render: (r) => agingPill(r.umur, amb) },
+        { key: 'umur', label: 'Jatuh Tempo', render: (r) => agingPill(r.umur, amb) },
         { key: '', label: 'Tindakan', acts: true, sort: false, render: (r) => { const a = App.acara(r.id_acara); return `<div class="acts">${waBtn(a.kontak_panitia, tagihSetoranText(r.id_acara), 'Tagih')}<button class="btn btn-soft btn-sm" data-act="new-setoran" data-acara="${r.id_acara}">${ic('plus', 14)} Setoran</button></div>`; } }
       ]
     });
@@ -276,6 +319,7 @@ AdminViews.beranda = {
       <div class="wa-box" id="ks-txt-${k.id_konsumsi}">${esc(txt)}</div>
       <div class="row wrap">
         <button class="btn btn-mint btn-sm" data-act="copy" data-target="ks-txt-${k.id_konsumsi}">${ic('copy', 15)} Salin Format WA</button>
+        ${tplBtn('konsumsi', k.id_konsumsi)}
         ${a.kontak_panitia ? waBtn(a.kontak_panitia, txt, 'Kirim ke Panitia') : ''}
         <button class="btn ${k.sudah_diingatkan ? 'btn-ghost' : 'btn-primary'} btn-sm" data-act="ks-mark" data-id="${k.id_konsumsi}" data-v="${k.sudah_diingatkan ? '0' : '1'}">${ic(k.sudah_diingatkan ? 'x' : 'check', 15)} ${k.sudah_diingatkan ? 'Batalkan tanda' : 'Tandai Sudah Diingatkan'}</button>
       </div>
@@ -304,7 +348,8 @@ AdminViews.acara = {
     const d = D(), f = AdminState.acaraFilter;
     const years = [...new Set(d.acara.map((a) => a.tahun))].sort().reverse();
     if (f.tahun && !years.includes(f.tahun)) years.unshift(f.tahun);
-    let list = d.acara.slice();
+    const nOff = d.acara.filter((a) => a.nonaktif && (!f.tahun || a.tahun === f.tahun)).length;
+    let list = d.acara.filter((a) => f.nonaktif ? a.nonaktif : !a.nonaktif);
     if (f.tahun) list = list.filter((a) => a.tahun === f.tahun);
     if (f.status) list = list.filter((a) => a.status_acara === f.status);
     if (f.bayar) list = list.filter((a) => App.finA(a.id_acara).status_bayar === f.bayar);
@@ -341,6 +386,7 @@ AdminViews.acara = {
         <select class="select sm" style="width:auto" data-af="status">${selectOpts(STATUS_ACARA, f.status, 'Semua status acara')}</select>
         <select class="select sm" style="width:auto" data-af="bayar">${selectOpts(['Belum', 'Sebagian', 'Lunas'].map((s) => ({ value: s, label: 'Bayar vendor: ' + s })), f.bayar, 'Semua status bayar')}</select>
         <select class="select sm" style="width:auto" data-af="setoran">${selectOpts(['Belum', 'Sebagian', 'Lunas'].map((s) => ({ value: s, label: 'Setoran: ' + s })), f.setoran, 'Semua status setoran')}</select>
+        <label class="check small"><input type="checkbox" data-af="nonaktif" ${f.nonaktif ? 'checked' : ''}> Lihat acara nonaktif (${nOff})</label>
         ${filtered ? `<button class="btn btn-ghost btn-sm" data-act="af-reset">${ic('x', 14)} Reset</button>` : ''}
       </div>
     </div>
@@ -352,10 +398,10 @@ AdminViews.acara = {
     const x = App.finA(a.id_acara), today = App.today;
     const dt = parseYMD(a.tanggal_mulai), past = a.tanggal_selesai < today;
     const pct = x.jumlah_item ? Math.round((x.terpasang / x.jumlah_item) * 100) : 0;
-    return `<div class="ev-card" style="--i:${Math.min(i, 10)}" data-act="open-acara" data-id="${esc(a.id_acara)}">
+    return `<div class="ev-card ${a.nonaktif ? 'off' : ''}" style="--i:${Math.min(i, 10)}" data-act="open-acara" data-id="${esc(a.id_acara)}">
       <div class="date-blk ${past ? 'past' : ''}"><div class="m">${BLN[dt.getMonth()]}</div><div class="d">${dt.getDate()}</div></div>
       <div class="ev-body">
-        <div class="ev-title">${esc(a.nama_acara)} ${badge(a.status_acara)}</div>
+        <div class="ev-title">${esc(a.nama_acara)} ${badge(a.status_acara)}${a.nonaktif ? badge('Nonaktif', 'b-neu no-dot') : ''}</div>
         <div class="ev-meta"><span>${ic('calendar', 14)} ${tglRange(a.tanggal_mulai, a.tanggal_selesai)}</span><span>${ic('user', 14)} PJ: ${esc(a.nama_panitia || '-')}</span>${a.lokasi ? `<span>${ic('pin', 14)} ${esc(a.lokasi)}</span>` : ''}</div>
         <div class="ev-badges">
           ${x.biaya ? payBadge(x.status_bayar, 'Vendor') : badge('Belum ada pesanan', 'b-neu')}
@@ -383,11 +429,11 @@ AdminViews.acara = {
         }, 250);
       });
     }
-    document.querySelectorAll('[data-af]').forEach((s) => s.addEventListener('change', () => { AdminState.acaraFilter[s.dataset.af] = s.value; App.renderView(false); }));
+    document.querySelectorAll('[data-af]').forEach((s) => s.addEventListener('change', () => { AdminState.acaraFilter[s.dataset.af] = s.type === 'checkbox' ? s.checked : s.value; App.renderView(false); }));
     if (App.route.id) AcaraDetail.after(App.route.id);
   }
 };
-ACT['af-reset'] = () => { Object.assign(AdminState.acaraFilter, { q: '', status: '', bayar: '', setoran: '' }); App.renderView(false); };
+ACT['af-reset'] = () => { Object.assign(AdminState.acaraFilter, { q: '', status: '', bayar: '', setoran: '', nonaktif: false }); App.renderView(false); };
 ACT['open-acara'] = (el) => { App.go('acara/' + encodeURIComponent(el.dataset.id)); };
 ACT['go-dokumen'] = () => App.go('dokumen');
 
@@ -410,6 +456,7 @@ const AcaraDetail = {
     const tabs = [['barang', 'Barang', 'box'], ['vendor', 'Per Vendor', 'store'], ['konsumsi', 'Konsumsi', 'utensils'], ['bayar', 'Pembayaran', 'wallet'], ['setoran', 'Setoran', 'coins'], ['berkas', 'Berkas', 'file']];
     return `
     <button class="back-link" data-act="go" data-r="acara">${ic('chevL', 16)} Daftar Acara</button>
+    ${a.nonaktif ? `<div class="callout warn" style="margin-bottom:14px">${ic('eyeOff', 18)}<div class="grow"><b>Acara ini nonaktif.</b> Tidak muncul di daftar, pengingat, total di Beranda, maupun portal vendor. Data & riwayat tetap tersimpan.</div><button class="btn btn-primary btn-sm" data-act="aktif-acara" data-id="${esc(id)}" data-v="1">${ic('checkCircle', 15)} Aktifkan kembali</button></div>` : ''}
     <div class="card">
       <div class="card-head" style="margin-bottom:18px">
         <div style="min-width:0;flex:1">
@@ -435,6 +482,7 @@ const AcaraDetail = {
         ${x.kekurangan > 0 && a.kontak_panitia ? waBtn(a.kontak_panitia, tagihSetoranText(id), 'Tagih Panitia') : ''}
         <span class="grow"></span>
         <button class="btn btn-ghost btn-sm" data-act="edit-acara" data-id="${esc(id)}">${ic('edit', 15)} Edit</button>
+        <button class="btn btn-ghost btn-sm" data-act="aktif-acara" data-id="${esc(id)}" data-v="${a.nonaktif ? '1' : '0'}">${ic(a.nonaktif ? 'checkCircle' : 'eyeOff', 15)} ${a.nonaktif ? 'Aktifkan' : 'Nonaktifkan'}</button>
         <button class="btn btn-ghost btn-sm tx-bad" data-act="del-acara" data-id="${esc(id)}">${ic('trash', 15)} Hapus</button>
       </div>
     </div>
@@ -499,7 +547,7 @@ const AcaraDetail = {
           ${k.sudah_diingatkan ? badge('Sudah diingatkan', 'b-ok') : badge('Belum diingatkan', 'b-warn')}</div>
           <div class="facts"><div class="fact"><div class="l">Durasi</div><div class="v">${num(k.durasi_jam)} jam</div></div><div class="fact"><div class="l">Beban</div><div class="v">${esc(k.kesulitan)}</div></div><div class="fact"><div class="l">Pekerja</div><div class="v">${num(k.jumlah_pekerja) || '-'}</div></div></div>
           <div class="rec"><div class="t">${ic('utensils', 13)} Rekomendasi</div><div class="v">${esc(k.rekomendasi)}</div></div>
-          <div class="row wrap"><button class="btn btn-mint btn-sm" data-act="copy" data-text="${esc(konsumsiText(k))}">${ic('copy', 14)} Salin WA</button>
+          <div class="row wrap"><button class="btn btn-mint btn-sm" data-act="copy" data-text="${esc(konsumsiText(k))}">${ic('copy', 14)} Salin WA</button>${tplBtn('konsumsi', k.id_konsumsi, 'Format')}
           <button class="btn btn-soft btn-sm" data-act="ks-mark" data-id="${k.id_konsumsi}" data-v="${k.sudah_diingatkan ? '0' : '1'}">${ic('check', 14)} ${k.sudah_diingatkan ? 'Batalkan' : 'Tandai diingatkan'}</button>
           <button class="btn btn-ghost btn-sm" data-act="edit-konsumsi" data-id="${k.id_konsumsi}">${ic('edit', 14)}</button>
           <button class="btn btn-ghost btn-sm tx-bad" data-act="del-konsumsi" data-id="${k.id_konsumsi}">${ic('trash', 14)}</button></div>
@@ -615,6 +663,20 @@ function openAcaraForm(a) {
   form.addEventListener('submit', save);
   m.querySelector('#f-acara-save').addEventListener('click', save);
 }
+ACT['aktif-acara'] = async (el) => {
+  const a = App.maps.acara[el.dataset.id], on = el.dataset.v === '1';
+  if (!on) {
+    const f = App.finA(a.id_acara);
+    const warn = f.sisa_vendor > 0 || f.kekurangan > 0 ? `<br><br><span class="tx-bad">${ic('alert', 14)} Masih ada ${f.sisa_vendor > 0 ? 'sisa tagihan vendor <b>' + rp(f.sisa_vendor) + '</b>' : ''}${f.sisa_vendor > 0 && f.kekurangan > 0 ? ' dan ' : ''}${f.kekurangan > 0 ? 'kekurangan setoran <b>' + rp(f.kekurangan) + '</b>' : ''} yang tidak akan diingatkan lagi.</span>` : '';
+    if (!await confirmDialog({ title: 'Nonaktifkan acara?', message: `<b>${esc(a.nama_acara)}</b> akan disembunyikan dari daftar acara, pengingat & total di Beranda, serta portal vendor. Data dan riwayat tetap tersimpan dan bisa diaktifkan kembali kapan saja.${warn}`, okText: 'Nonaktifkan' })) return;
+  }
+  App.write('setAktifAcara', { id_acara: a.id_acara, aktif: on }, { btn: el });
+};
+ACT['toggle-user'] = async (el) => {
+  const u = App.maps.users[el.dataset.id], on = el.dataset.v === '1';
+  if (!on && !await confirmDialog({ title: 'Nonaktifkan akun?', message: `<b>${esc(u.nama)}</b> (@${esc(u.username)}) tidak akan bisa login, dan sesi yang sedang berjalan langsung berakhir. Akun & datanya tetap tersimpan dan bisa diaktifkan kembali.`, okText: 'Nonaktifkan', danger: true })) return;
+  App.write('toggleUser', { id_user: u.id_user, aktif: on }, { btn: el, close: false });
+};
 ACT['del-acara'] = async (el) => {
   const a = App.maps.acara[el.dataset.id];
   if (!await confirmDialog({ title: 'Hapus acara?', message: `Acara <b>${esc(a.nama_acara)}</b> akan dihapus permanen. Acara yang sudah memiliki pesanan/pembayaran tidak dapat dihapus (ubah statusnya menjadi "Batal").`, okText: 'Hapus', danger: true })) return;
@@ -841,7 +903,7 @@ AdminViews.pembayaran = {
       <button class="btn btn-primary" data-act="new-bayar">${ic('plus', 17)} Catat Pembayaran</button></div>
     <div class="mini-kpis stagger">
       <div class="mini-kpi" style="--i:0"><div class="l">Dibayar Tahun ${year}</div><div class="v">${countEl(thisYear.reduce((s, p) => s + p.nominal_total, 0))}</div><div class="s">${thisYear.length} transaksi</div></div>
-      <div class="mini-kpi" style="--i:1"><div class="l tx-bad">Sisa Tagihan Vendor</div><div class="v tx-bad">${countEl(t.sisa)}</div><div class="s">${t.n_tagihan} tagihan • ${t.n_lewat} lewat ${ambang()} hari</div></div>
+      <div class="mini-kpi" style="--i:1"><div class="l tx-bad">Sisa Tagihan Vendor</div><div class="v tx-bad">${countEl(t.sisa)}</div><div class="s">${t.n_tagihan} tagihan • ${t.n_lewat} lewat jatuh tempo</div></div>
       <div class="mini-kpi" style="--i:2"><div class="l">Total Biaya Riil</div><div class="v">${countEl(t.tagihan)}</div><div class="s">Semua acara aktif</div></div>
       <div class="mini-kpi" style="--i:3"><div class="l">Nota Belum Diteruskan</div><div class="v">${belumNota}</div><div class="s">ke panitia</div></div>
     </div>
@@ -869,7 +931,7 @@ AdminViews.pembayaran = {
   },
   perVendor() {
     const rows = D().vendor.map((v) => {
-      const av = D().fin.av.filter((x) => x.id_vendor === v.id_vendor);
+      const av = D().fin.av.filter((x) => x.id_vendor === v.id_vendor && !isOff(App.maps.acara[x.id_acara]));
       return { id_vendor: v.id_vendor, nama: v.nama_vendor, tagihan: av.reduce((s, x) => s + x.tagihan, 0), dibayar: av.reduce((s, x) => s + x.dibayar, 0), sisa: av.reduce((s, x) => s + Math.max(0, x.sisa), 0), n: av.filter((x) => x.sisa > 0).length, umur: Math.max(0, ...av.filter((x) => x.sisa > 0).map((x) => x.umur)) };
     }).filter((r) => r.tagihan > 0 || r.dibayar > 0);
     return DT.render('bayar-vendor', {
@@ -879,7 +941,7 @@ AdminViews.pembayaran = {
         { key: 'tagihan', label: 'Total Tagihan', align: 'r', render: (r) => `<span class="tnum">${rp(r.tagihan)}</span>` },
         { key: 'dibayar', label: 'Dibayar', align: 'r', render: (r) => `<span class="tnum">${rp(r.dibayar)}</span>` },
         { key: 'sisa', label: 'Sisa', align: 'r', render: (r) => `<b class="tnum ${r.sisa > 0 ? 'tx-bad' : 'tx-ok'}">${rp(r.sisa)}</b>` },
-        { key: 'umur', label: 'Tertua', render: (r) => r.sisa > 0 ? agingPill(r.umur, ambang()) : badge('Lunas', 'b-ok') },
+        { key: 'umur', label: 'Jatuh Tempo', render: (r) => r.sisa > 0 ? agingPill(r.umur, ambang()) : badge('Lunas', 'b-ok') },
         { key: '', label: '', acts: true, sort: false, render: (r) => `<div class="acts">${r.sisa > 0 ? `<button class="btn btn-primary btn-sm" data-act="new-bayar" data-vendor="${r.id_vendor}">${ic('wallet', 14)} Bayar</button>` : ''}<button class="btn btn-soft btn-sm" data-act="rekap-vendor" data-id="${r.id_vendor}">${ic('printer', 14)} Rekap</button></div>` }
       ]
     });
@@ -942,7 +1004,7 @@ function openBayarForm(opt = {}) {
   const sisaNow = (ida) => { const av = App.avOf(ida, PM.vendor); return (av ? av.sisa : 0) + (PM.orig[ida] || 0); };
   const rowIds = () => {
     if (!PM.vendor) return [];
-    const ids = new Set(d.fin.av.filter((x) => x.id_vendor === PM.vendor && x.sisa > 0).map((x) => x.id_acara));
+    const ids = new Set(d.fin.av.filter((x) => x.id_vendor === PM.vendor && x.sisa > 0 && !isOff(App.maps.acara[x.id_acara])).map((x) => x.id_acara));
     Object.keys(PM.alok).forEach((k) => ids.add(k));
     PM.extra.forEach((k) => ids.add(k));
     return [...ids].filter((k) => App.maps.acara[k]).sort((a, b) => {
@@ -966,7 +1028,7 @@ function openBayarForm(opt = {}) {
           <div id="pm-st-${esc(k)}"></div></div>`;
       }).join('') : `<div style="padding:10px 0">${emptyState('Tidak ada tagihan tertunda untuk vendor ini', 'Tambahkan acara di bawah bila ini uang muka.', 'checkCircle')}</div>`;
     const inRows = new Set(ids);
-    $('#pm-addsel').innerHTML = '<option value="">— Pilih acara lain —</option>' + d.acara.filter((a) => !inRows.has(a.id_acara) && a.status_acara !== 'Batal').sort((a, b) => b.tanggal_mulai.localeCompare(a.tanggal_mulai)).map((a) => `<option value="${a.id_acara}">${esc(a.nama_acara)} — ${tgl(a.tanggal_mulai)}</option>`).join('');
+    $('#pm-addsel').innerHTML = '<option value="">— Pilih acara lain —</option>' + d.acara.filter((a) => !inRows.has(a.id_acara) && !isOff(a)).sort((a, b) => b.tanggal_mulai.localeCompare(a.tanggal_mulai)).map((a) => `<option value="${a.id_acara}">${esc(a.nama_acara)} — ${tgl(a.tanggal_mulai)}</option>`).join('');
     update();
   };
   const update = () => {
@@ -1056,7 +1118,7 @@ AdminViews.setoran = {
       <div class="mini-kpi" style="--i:3"><div class="l tx-bad">Ditalangi Admin</div><div class="v tx-bad">${countEl(t.talangan)}</div><div class="s">${t.n_ditalangi} acara</div></div>
     </div>
     <div class="card section">
-      <div class="card-head"><div><h3><span class="card-title-ic amber">${ic('users', 18)}</span>Status Setoran per Acara</h3><p>Gunakan tombol "Tagih" untuk mengirim pengingat WhatsApp ke panitia.</p></div></div>
+      <div class="card-head"><div><h3><span class="card-title-ic amber">${ic('users', 18)}</span>Status Setoran per Acara</h3><p>Gunakan tombol "Tagih" untuk mengirim pengingat WhatsApp ke panitia.</p></div>${tplBtn('tagih', '', 'Edit Format WA Tagihan', 'btn-soft btn-sm')}</div>
       ${DT.render('setoran-acara', {
         rows: perAcara, sort: 'kekurangan', dir: 'desc', pageSize: 10,
         search: (r) => App.acara(r.id_acara).nama_acara + ' ' + App.acara(r.id_acara).nama_panitia, placeholder: 'Cari acara / panitia...',
@@ -1209,7 +1271,7 @@ AdminViews.katalog = {
     if (f.kategori) rows = rows.filter((k) => k.kategori === f.kategori);
     return `
     <div class="page-head"><div><span class="eyebrow">${ic('tag', 13)} Master Data</span><h1>Katalog Barang</h1><p>Daftar barang sewa tiap vendor beserta harga vendor (biaya riil) dan harga estimasi bawaan untuk panitia.</p></div>
-      <button class="btn btn-primary" data-act="new-barang">${ic('plus', 17)} Tambah Barang</button></div>
+      <div class="row wrap"><button class="btn btn-soft" data-act="kat-export">${ic('download', 16)} Ekspor Excel</button><button class="btn btn-soft" data-act="kat-import">${ic('upload', 16)} Import Excel</button><button class="btn btn-primary" data-act="new-barang">${ic('plus', 17)} Tambah Barang</button></div></div>
     <div class="card">
       ${DT.render('katalog', {
         rows, sort: 'nama_barang', pageSize: 15,
@@ -1296,14 +1358,14 @@ AdminViews.vendor = {
     <div class="card section">
       <div class="card-head"><div><h3><span class="card-title-ic">${ic('users', 18)}</span>Akun Pengguna</h3><p>Bagikan username & kata sandi vendor secara pribadi.</p></div></div>
       ${DT.render('users', {
-        rows: d.users, sort: 'role',
+        rows: d.users, sort: 'role', rowAttr: (r) => r.aktif ? '' : 'style="opacity:.6"',
         cols: [
           { key: 'nama', label: 'Nama', main: true, render: (r) => `<div class="row" style="gap:12px"><span class="avatar" style="width:36px;height:36px">${initials(r.nama)}</span><div><div class="t-main">${esc(r.nama)} ${r.id_user === d.user.id_user ? badge('Anda', 'b-info') : ''}</div><div class="t-sub">@${esc(r.username)}</div></div></div>` },
           { key: 'role', label: 'Peran', render: (r) => r.role === 'admin' ? badge('Admin', 'b-dark') : badge('Vendor', 'b-info') },
           { key: 'id_vendor', label: 'Vendor', render: (r) => `<span class="small">${r.id_vendor ? esc(App.vName(r.id_vendor)) : '—'}</span>` },
           { key: 'aktif', label: 'Status', render: (r) => (r.aktif ? badge('Aktif', 'b-ok') : badge('Nonaktif', 'b-neu')) + (r.terkunci ? ' ' + badge('Terkunci', 'b-bad') : '') + (r.harus_ganti ? ' ' + badge('Wajib ganti sandi', 'b-warn') : '') },
           { key: 'login_terakhir', label: 'Login Terakhir', render: (r) => `<span class="small muted">${esc(r.login_terakhir || 'Belum pernah')}</span>` },
-          { key: '', label: '', acts: true, sort: false, render: (r) => `<div class="acts"><button class="btn btn-ghost btn-sm" data-act="edit-user" data-id="${r.id_user}">${ic('edit', 14)}</button><button class="btn btn-soft btn-sm" data-act="reset-pw" data-id="${r.id_user}">${ic('lock', 14)} Reset sandi</button></div>` }
+          { key: '', label: '', acts: true, sort: false, render: (r) => `<div class="acts"><button class="btn btn-ghost btn-sm" data-act="edit-user" data-id="${r.id_user}" aria-label="Edit">${ic('edit', 14)}</button><button class="btn btn-soft btn-sm" data-act="reset-pw" data-id="${r.id_user}">${ic('lock', 14)} Reset sandi</button>${r.id_user === d.user.id_user ? '' : `<button class="btn btn-sm ${r.aktif ? 'btn-danger' : 'btn-mint'}" data-act="toggle-user" data-id="${r.id_user}" data-v="${r.aktif ? '0' : '1'}">${ic(r.aktif ? 'lock' : 'checkCircle', 14)} ${r.aktif ? 'Nonaktifkan' : 'Aktifkan'}</button>`}</div>` }
         ]
       })}
     </div>`;
@@ -1374,16 +1436,73 @@ function openUserForm(u) {
   });
 }
 ACT['copy-pw'] = () => { const p = document.getElementById('u-pw'); if (p) copyText(p.value); };
+let CRED = null;
 function credentialDialog(username, password, idv) {
+  CRED = { username, password, id_vendor: idv };
   const v = App.maps.vendor[idv] || {};
-  const url = location.href.split('#')[0];
-  const text = `Assalamu'alaikum ${v.pic || ''}.\nBerikut akun Portal Vendor Event Management Gontor 3:\n• Alamat: ${url}\n• Username: ${username}\n• Kata sandi: ${password}\nMohon dijaga kerahasiaannya. Jazakumullah khairan.`;
+  const text = fillTpl(getTpl('akun'), varsAkun(CRED));
   Modal.open({
-    title: 'Akun berhasil dibuat', size: 'sm',
+    title: 'Akun berhasil dibuat', size: 'sm', id: 'cred-modal', onClose: () => (CRED = null),
     body: `<div class="wa-box" id="cred-txt">${esc(text)}</div><p class="small muted">Kata sandi tidak dapat dilihat lagi setelah jendela ini ditutup.</p>`,
-    foot: `<button class="btn btn-mint" data-act="copy" data-target="cred-txt">${ic('copy', 15)} Salin</button>${v.kontak ? waBtn(v.kontak, text, 'Kirim WA', '') : ''}`
+    foot: `${tplBtn('akun', '', 'Edit Format')}<button class="btn btn-mint" data-act="copy" data-target="cred-txt">${ic('copy', 15)} Salin</button>${v.kontak ? `<a class="btn wa-btn" id="cred-wa" href="${waLink(v.kontak, text)}" target="_blank" rel="noopener">${ic('chat', 15)} Kirim WA</a>` : ''}`
   });
 }
+function refreshCredential() {
+  if (!CRED) return;
+  const v = App.maps.vendor[CRED.id_vendor] || {};
+  const text = fillTpl(getTpl('akun'), varsAkun(CRED));
+  const box = document.getElementById('cred-txt'); if (box) box.textContent = text;
+  const wa = document.getElementById('cred-wa'); if (wa) wa.href = waLink(v.kontak, text);
+}
+
+/* Editor format pesan WhatsApp */
+ACT['wa-tpl'] = (el) => {
+  const type = el.dataset.tpl, ref = el.dataset.ref;
+  let vars;
+  if (type === 'konsumsi') { const k = ref && D().konsumsi.find((x) => x.id_konsumsi === ref); vars = k ? varsKonsumsi(k) : sampleVars(type); }
+  else if (type === 'tagih') vars = ref ? varsTagih(ref) : sampleVars(type);
+  else vars = CRED ? varsAkun(CRED) : sampleVars(type);
+  openTplEditor(type, vars);
+};
+function openTplEditor(type, vars) {
+  const def = TPL_DEF[type];
+  const m = Modal.open({
+    title: 'Edit Format Pesan WhatsApp', sub: esc(def.label), size: 'lg',
+    body: `<div class="callout info" style="margin-bottom:14px">${ic('info', 18)}<div>Tulis pesan sesuka Anda. Kata di dalam <b>{kurung kurawal}</b> otomatis diganti data asli. Klik tombol di bawah untuk menyisipkan. Format WhatsApp: <b>*tebal*</b>, <i>_miring_</i>.</div></div>
+      <div class="lbl" style="margin-bottom:8px">Sisipkan data</div>
+      <div class="row wrap" style="gap:6px;margin-bottom:12px">${Object.entries(def.vars).map(([k, d]) => `<button type="button" class="chip" data-ins="${k}" title="${esc(d)}" style="height:30px;padding:0 10px">{${k}}</button>`).join('')}</div>
+      <div class="field"><label>Format pesan</label><textarea class="textarea mono" id="tpl-txt" style="min-height:200px;font-size:13px">${esc(getTpl(type))}</textarea><span class="hint" id="tpl-warn"></span></div>
+      <div class="lbl" style="margin:14px 0 8px">Pratinjau (dengan contoh data)</div>
+      <div class="wa-box" id="tpl-prev"></div>`,
+    foot: `<button class="btn btn-ghost" id="tpl-reset" style="margin-right:auto">${ic('refresh', 15)} Kembalikan bawaan</button><button class="btn btn-ghost" data-modal-close>Batal</button><button class="btn btn-primary" id="tpl-save">${ic('check', 16)} Simpan Format</button>`
+  });
+  const ta = m.querySelector('#tpl-txt');
+  const upd = () => {
+    m.querySelector('#tpl-prev').textContent = fillTpl(ta.value, vars);
+    const unknown = [...new Set((ta.value.match(/\{(\w+)\}/g) || []).map((x) => x.slice(1, -1)).filter((k) => !(k in def.vars)))];
+    m.querySelector('#tpl-warn').innerHTML = unknown.length ? `<span class="tx-bad">${ic('alert', 13)} Tidak dikenali: ${unknown.map((k) => '{' + esc(k) + '}').join(', ')} — akan tampil apa adanya.</span>` : `${ta.value.length}/3000 karakter`;
+  };
+  ta.addEventListener('input', upd);
+  m.querySelectorAll('[data-ins]').forEach((b) => b.addEventListener('click', () => {
+    const ins = '{' + b.dataset.ins + '}', st = ta.selectionStart, en = ta.selectionEnd;
+    ta.value = ta.value.slice(0, st) + ins + ta.value.slice(en);
+    ta.focus(); ta.setSelectionRange(st + ins.length, st + ins.length); upd();
+  }));
+  m.querySelector('#tpl-reset').addEventListener('click', () => { ta.value = def.def; upd(); toast('Format bawaan dimuat. Klik Simpan untuk menerapkan.', 'info', 2500); });
+  m.querySelector('#tpl-save').addEventListener('click', async (e) => {
+    const text = ta.value.trim();
+    if (!text) return toast('Format pesan tidak boleh kosong.', 'warn');
+    if (text.length > 3000) return toast('Format pesan maksimal 3000 karakter.', 'warn');
+    const res = await App.write('saveSettings', { [def.key]: text }, { btn: e.currentTarget, close: false, toast: false });
+    if (!res.success) return;
+    if ((D().settings[def.key] || '').trim() !== text) return toast('Format belum tersimpan: backend masih versi lama. Tempel Kode.gs terbaru lalu Deploy → New version.', 'warn', 9000);
+    Modal.close();
+    refreshCredential();
+    toast('Format pesan WhatsApp "' + def.label + '" tersimpan.', 'success');
+  });
+  upd();
+}
+
 ACT['reset-pw'] = (el) => {
   const u = App.maps.users[el.dataset.id];
   const pw = Math.random().toString(36).slice(2, 10);
@@ -1464,7 +1583,7 @@ AdminViews.pengaturan = {
     <form id="f-set">
     <div class="grid-2 stagger">
       <div class="card" style="--i:0"><div class="card-head"><div><h3><span class="card-title-ic red">${ic('bell', 18)}</span>Pengingat & Sesi</h3></div></div>
-        <div class="form-grid">${f('ambang_hari', 'Ambang "Perlu ditagih" (hari)', 'number', 'Tagihan/setoran yang belum lunas setelah X hari diberi penanda merah.')}
+        <div class="form-grid">${f('ambang_hari', 'Jatuh tempo (hari setelah acara selesai)', 'number', 'Tagihan/setoran yang belum lunas melewati jatuh tempo diberi penanda merah "Perlu ditagih".')}
         ${f('sesi_jam', 'Lama sesi login (jam)', 'number', 'Maksimal 6 jam. Sesi diperpanjang otomatis selama aktif.')}
         <div class="field full"><label>No. WhatsApp Admin (untuk tombol vendor)</label><input class="input" name="kontak_admin_wa" value="${esc(st.kontak_admin_wa)}" inputmode="tel" placeholder="08xxxxxxxxxx"></div></div></div>
       <div class="card" style="--i:1"><div class="card-head"><div><h3><span class="card-title-ic">${ic('utensils', 18)}</span>Aturan Rekomendasi Konsumsi</h3><p>Tingkat diambil dari yang lebih berat antara durasi dan kesulitan.</p></div></div>
@@ -1484,6 +1603,10 @@ AdminViews.pengaturan = {
           <button type="button" class="btn btn-soft" data-act="change-pw">${ic('lock', 15)} Ganti Kata Sandi</button>
         </div></div>
     </div>
+    <div class="card section"><div class="card-head"><div><h3><span class="card-title-ic">${ic('chat', 18)}</span>Format Pesan WhatsApp</h3><p>Ubah kalimat pesan yang dikirim ke panitia & vendor. Data seperti nama acara dan nominal terisi otomatis.</p></div></div>
+      <div class="grid-3">${Object.entries(TPL_DEF).map(([k, t]) => `<div class="remind" style="gap:10px"><div class="row" style="gap:10px"><span class="li-ic mint">${ic(t.icon, 18)}</span><b style="font-family:var(--font-head)">${esc(t.label)}</b></div>
+        <div class="wa-box" style="max-height:150px;overflow:hidden;font-size:11.5px">${esc(fillTpl(getTpl(k), sampleVars(k)))}</div>
+        <div class="row between">${(D().settings[t.key] || t.def) === t.def ? '<span class="xs muted">Format bawaan</span>' : badge('Sudah diubah', 'b-ok')}${tplBtn(k, '', 'Edit Format', 'btn-soft btn-sm')}</div></div>`).join('')}</div></div>
     <div class="row section" style="justify-content:flex-end;gap:10px"><button type="button" class="btn btn-soft" data-act="load-log">${ic('activity', 16)} Log Aktivitas</button><button type="button" class="btn btn-primary" data-act="save-settings">${ic('check', 16)} Simpan Pengaturan</button></div>
     </form>
     <div class="card section"><div class="row between wrap"><div class="small muted">Backend v${esc(D().sys.version)} • Data: <a href="${esc(D().sys.spreadsheet_url)}" target="_blank" rel="noopener">Google Sheets</a> • <a href="${esc(D().sys.folder_url)}" target="_blank" rel="noopener">Google Drive</a></div>
@@ -1510,5 +1633,264 @@ ACT['load-log'] = async (el) => {
   Modal.open({
     title: 'Log Aktivitas', sub: '150 aktivitas terakhir', size: 'lg',
     body: `<div class="list">${res.log.map((l) => `<div class="li"><span class="li-ic ${/GAGAL|DITOLAK/.test(l.aksi) ? 'red' : /HAPUS/.test(l.aksi) ? 'amber' : 'mint'}">${ic(/GAGAL|DITOLAK/.test(l.aksi) ? 'alert' : 'activity', 16)}</span><div class="grow" style="min-width:0"><div class="bold small">${esc(l.aksi.replace(/_/g, ' '))}</div><div class="xs muted ellipsis">${esc(l.detail)}</div></div><div class="stack right" style="gap:0"><span class="xs">${esc(l.user)}</span><span class="xs muted">${esc(l.waktu)}</span></div></div>`).join('') || emptyState('Belum ada log', '', 'activity')}</div>`
+  });
+};
+
+
+/* =====================================================================
+ *  IMPORT / EKSPOR KATALOG (Excel .xlsx / CSV)
+ * ===================================================================== */
+const IMP_HEAD = ['Nama Barang *', 'Vendor *', 'Kategori', 'Satuan', 'Harga Vendor (Rp) *', 'Harga Estimasi (Rp)', 'Spesifikasi'];
+const IMP_FIELDS = {
+  nama_barang: ['nama barang', 'nama', 'barang', 'nama item', 'item'],
+  vendor: ['vendor', 'nama vendor', 'rekanan', 'rekanan vendor', 'id vendor'],
+  kategori: ['kategori', 'jenis', 'kategori barang'],
+  satuan: ['satuan', 'unit satuan'],
+  harga_vendor: ['harga vendor', 'harga riil', 'harga sewa', 'harga vendor riil', 'harga'],
+  harga_estimasi: ['harga estimasi', 'estimasi', 'harga panitia', 'harga estimasi panitia'],
+  spesifikasi: ['spesifikasi', 'keterangan', 'spek', 'ukuran', 'deskripsi']
+};
+const KAT_KEYWORD = [
+  [/tenda|terop|tarub|tratak|dome/, 'Tenda & Terop'], [/panggung|stage/, 'Panggung'], [/rigging|truss|rangka/, 'Rigging & Truss'],
+  [/sound|audio|lighting|lampu|speaker|mic|led|proyektor|layar/, 'Sound & Lighting'], [/kursi|meja|futura|chair/, 'Kursi & Meja'],
+  [/karpet|permadani|ambal/, 'Karpet & Permadani'], [/sofa|dekor|bunga|backdrop/, 'Sofa & Dekorasi'], [/kipas|misty|fan|\bac\b|pendingin|cooler/, 'Pendingin & Kipas'],
+  [/barikade|barrier|pagar|keamanan/, 'Barikade & Keamanan'], [/genset|listrik|kabel|panel/, 'Genset & Listrik']
+];
+const normTxt = (v) => String(v === undefined || v === null ? '' : v).toLowerCase().replace(/\(.*?\)/g, ' ').replace(/[*:]/g, ' ').replace(/[^a-z0-9&²]+/g, ' ').replace(/\s+/g, ' ').trim();
+const normName = (v) => String(v === undefined || v === null ? '' : v).toLowerCase().replace(/\s+/g, ' ').trim();
+
+function impHeaderMap(row) {
+  const map = {};
+  (row || []).forEach((cell, i) => {
+    const h = normTxt(cell);
+    if (!h) return;
+    for (const [f, syn] of Object.entries(IMP_FIELDS)) if (map[f] === undefined && syn.includes(h)) { map[f] = i; return; }
+  });
+  return map;
+}
+function impHarga(v) {
+  if (typeof v === 'number') return isFinite(v) ? { v: Math.round(v) } : { err: 'bukan angka' };
+  let t = String(v === undefined || v === null ? '' : v).trim();
+  if (!t) return { empty: true };
+  if (/^#|#ERROR/.test(t)) return { err: 'sel berisi error rumus (' + t.replace('#ERROR ', '') + ')' };
+  t = t.replace(/rp\.?|idr|\s/gi, '');
+  if (t.startsWith('-')) return { err: 'tidak boleh negatif' };
+  if (/^\d+([.,]\d{1,2})$/.test(t)) return { v: Math.round(parseFloat(t.replace(',', '.'))) };
+  t = t.replace(/[.,]/g, '');
+  if (/^\d+$/.test(t)) return { v: parseInt(t, 10) };
+  return { err: '"' + String(v).slice(0, 20) + '" bukan angka' };
+}
+function impKategori(v) {
+  const t = String(v || '').trim();
+  if (!t) return { k: 'Lainnya' };
+  const exact = KATEGORI.find((k) => k.toLowerCase() === t.toLowerCase());
+  if (exact) return { k: exact };
+  const low = t.toLowerCase();
+  const hit = KAT_KEYWORD.find(([re]) => re.test(low));
+  if (hit) return { k: hit[1], note: 'kategori "' + t + '" → ' + hit[1] };
+  return { k: 'Lainnya', note: 'kategori "' + t + '" tidak dikenal → Lainnya' };
+}
+function impVendor(v) {
+  const t = normName(v);
+  if (!t) return { err: 'kolom Vendor kosong' };
+  const list = D().vendor;
+  const byId = list.find((x) => x.id_vendor.toLowerCase() === t);
+  if (byId) return { id: byId.id_vendor };
+  const exact = list.find((x) => normName(x.nama_vendor) === t);
+  if (exact) return { id: exact.id_vendor };
+  const part = list.filter((x) => normName(x.nama_vendor).includes(t) || t.includes(normName(x.nama_vendor)));
+  if (part.length === 1) return { id: part[0].id_vendor, note: 'vendor "' + String(v).trim() + '" dicocokkan ke ' + part[0].nama_vendor };
+  return { baru: String(v).trim(), saran: part.map((x) => x.nama_vendor) };
+}
+
+const IM = { rows: [], file: '', sheet: '', update: true, buatVendor: false };
+function impValidate() {
+  const seen = {};
+  const katalog = D().katalog;
+  IM.rows.forEach((r) => {
+    r.status = ''; r.notes = []; r.err = '';
+    if (r.skip) { r.status = 'skip'; return; }
+    if (!r.nama) r.err = 'Nama Barang kosong';
+    const vd = impVendor(r.vendorRaw);
+    r.id_vendor = vd.id || ''; r.vendor_baru = '';
+    if (vd.note) r.notes.push(vd.note);
+    if (!r.err && vd.err) r.err = vd.err;
+    if (!r.err && vd.baru) {
+      if (IM.buatVendor) { r.vendor_baru = vd.baru; r.notes.push('vendor baru "' + vd.baru + '" akan dibuat'); }
+      else r.err = 'Vendor "' + vd.baru + '" belum terdaftar' + (vd.saran && vd.saran.length ? ' (mungkin: ' + vd.saran.join(' / ') + ')' : '') + '. Tambahkan di menu Vendor & Akun, perbaiki ejaannya, atau centang "Buat vendor baru otomatis".';
+    }
+    const hv = impHarga(r.hvRaw), he = impHarga(r.heRaw);
+    if (!r.err && hv.empty) r.err = 'Harga Vendor kosong';
+    if (!r.err && hv.err) r.err = 'Harga Vendor ' + hv.err;
+    if (!r.err && he.err) r.err = 'Harga Estimasi ' + he.err;
+    r.harga_vendor = hv.v || 0;
+    r.harga_estimasi = he.empty ? r.harga_vendor : (he.v || 0);
+    if (he.empty && !hv.empty) r.notes.push('estimasi = harga vendor');
+    const kt = impKategori(r.katRaw); r.kategori = kt.k; if (kt.note) r.notes.push(kt.note);
+    r.satuan = String(r.satRaw || '').trim() || 'unit';
+    if (r.err) { r.status = 'error'; return; }
+    const vkey = (r.id_vendor || 'NEW:' + normName(r.vendor_baru)) + '|' + normName(r.nama);
+    if (seen[vkey]) { r.status = 'error'; r.err = 'Duplikat dengan baris ' + seen[vkey] + ' di berkas ini'; return; }
+    seen[vkey] = r.baris;
+    const ex = r.id_vendor && katalog.find((k) => k.id_vendor === r.id_vendor && normName(k.nama_barang) === normName(r.nama));
+    if (ex) {
+      r.status = IM.update ? 'update' : 'skip-ada';
+      if (IM.update && (ex.harga_vendor !== r.harga_vendor || ex.harga_estimasi !== r.harga_estimasi)) r.notes.push('harga lama ' + rp(ex.harga_vendor) + ' → ' + rp(r.harga_vendor));
+      if (IM.update && !ex.aktif) r.notes.push('barang nonaktif akan diaktifkan lagi');
+    } else r.status = 'baru';
+  });
+}
+function impRaw(v) { return v === '' || v === null || v === undefined ? '<span class="muted">—</span>' : typeof v === 'number' ? rp(v) : esc(String(v)); }
+function impStatusBadge(r) {
+  return { baru: badge('Baru', 'b-ok'), update: badge('Perbarui', 'b-info'), 'skip-ada': badge('Dilewati (sudah ada)', 'b-neu'), skip: badge('Contoh — dilewati', 'b-neu'), error: badge('Error', 'b-bad') }[r.status] || '';
+}
+function impRenderResult(m) {
+  impValidate();
+  const c = { baru: 0, update: 0, error: 0, skip: 0 };
+  IM.rows.forEach((r) => { if (r.status === 'baru') c.baru++; else if (r.status === 'update') c.update++; else if (r.status === 'error') c.error++; else c.skip++; });
+  const ok = c.baru + c.update;
+  const list = IM.rows.slice().sort((a, b) => (a.status === 'error' ? 0 : 1) - (b.status === 'error' ? 0 : 1) || a.baris - b.baris);
+  m.querySelector('#im-result').innerHTML = `
+    <div class="row wrap between" style="margin:4px 0 12px;gap:10px">
+      <div class="small"><b>${esc(IM.file)}</b> • sheet "${esc(IM.sheet)}" • ${IM.rows.length} baris data</div>
+      <div class="row wrap" style="gap:6px">${badge(c.baru + ' baru', 'b-ok')}${badge(c.update + ' diperbarui', 'b-info')}${badge(c.skip + ' dilewati', 'b-neu')}${badge(c.error + ' error', c.error ? 'b-bad' : 'b-neu')}</div>
+    </div>
+    ${c.error ? `<div class="callout bad" style="margin-bottom:12px">${ic('alert', 18)}<div><b>${c.error} baris bermasalah</b> dan tidak akan diimpor. Perbaiki di Excel lalu unggah ulang, atau lanjutkan untuk mengimpor ${ok} baris yang valid saja.</div></div>`
+      : ok ? `<div class="callout ok" style="margin-bottom:12px">${ic('checkCircle', 18)}<div>Semua baris valid. Siap mengimpor <b>${ok}</b> barang.</div></div>` : ''}
+    <div class="dt"><div class="dt-wrap" style="max-height:340px;overflow:auto"><table><thead><tr><th>Baris</th><th>Nama Barang</th><th>Vendor</th><th>Kategori</th><th class="r">Harga Vendor</th><th class="r">Estimasi</th><th>Status</th></tr></thead><tbody>
+    ${list.map((r) => `<tr><td data-label="Baris" class="small muted">${r.baris}</td><td class="td-main"><div class="t-main">${esc(r.nama || '—')}</div><div class="t-sub">${esc(r.satuan)}</div></td>
+      <td data-label="Vendor" class="small">${esc(r.id_vendor ? App.vName(r.id_vendor) : r.vendor_baru || r.vendorRaw || '—')}</td><td data-label="Kategori" class="small">${esc(r.kategori || '')}</td>
+      <td data-label="Harga Vendor" class="r tnum small">${r.status === 'error' ? impRaw(r.hvRaw) : rp(r.harga_vendor)}</td><td data-label="Estimasi" class="r tnum small">${r.status === 'error' ? impRaw(r.heRaw) : rp(r.harga_estimasi)}</td>
+      <td data-label="Status">${impStatusBadge(r)}${r.err ? `<div class="xs tx-bad" style="margin-top:3px;max-width:320px">${esc(r.err)}</div>` : ''}${r.notes.length && r.status !== 'error' ? `<div class="xs muted" style="margin-top:3px;max-width:320px">${esc(r.notes.join(' • '))}</div>` : ''}</td></tr>`).join('')}
+    </tbody></table></div></div>`;
+  const btn = m.querySelector('#im-go');
+  btn.disabled = !ok;
+  btn.innerHTML = ic('upload', 16) + (ok ? ` Impor ${ok} Barang` : ' Tidak ada yang bisa diimpor');
+}
+
+ACT['kat-template'] = () => katalogWorkbook(false);
+ACT['kat-export'] = () => katalogWorkbook(true);
+function katalogWorkbook(withData) {
+  const vendors = D().vendor.filter((v) => v.aktif);
+  const vn = vendors[0] ? vendors[0].nama_vendor : 'Nama Vendor Anda';
+  const data = withData
+    ? D().katalog.filter((k) => k.aktif).sort((a, b) => App.vName(a.id_vendor).localeCompare(App.vName(b.id_vendor)) || a.nama_barang.localeCompare(b.nama_barang))
+      .map((k) => [k.nama_barang, App.vName(k.id_vendor), k.kategori, k.satuan, k.harga_vendor, k.harga_estimasi, k.spesifikasi || ''])
+    : [['CONTOH - Tenda VIP Semi-Rigging 10x20 m', vn, 'Tenda & Terop', 'set', 10000000, 11000000, 'Atap putih, tiang besi'],
+       ['CONTOH - Kursi Futura + Sarung', vn, 'Kursi & Meja', 'buah', 10000, 12000, 'Sarung hijau']];
+  const n = 1000;
+  const validations = [
+    { type: 'decimal', operator: 'greaterThanOrEqual', formula: '0', ref: `E2:F${n}`, title: 'Harga tidak valid', error: 'Isi angka saja tanpa Rp/titik, minimal 0. Contoh: 1500000', prompt: 'Angka saja, contoh 1500000', promptTitle: 'Harga (Rp)' },
+    { type: 'list', formula: `'Daftar Kategori'!$A$2:$A$${KATEGORI.length + 1}`, ref: `C2:C${n}`, style: 'warning', title: 'Kategori tidak dikenal', error: 'Pilih dari daftar. Jika tetap dilanjutkan, akan dicocokkan otomatis atau menjadi "Lainnya".' },
+    { type: 'list', formula: `'Daftar Satuan'!$A$2:$A$${SATUAN.length + 1}`, ref: `D2:D${n}`, style: 'information', title: 'Satuan', error: 'Disarankan memilih dari daftar.' }
+  ];
+  if (vendors.length) validations.push({ type: 'list', formula: `'Daftar Vendor'!$A$2:$A$${vendors.length + 1}`, ref: `B2:B${n}`, style: 'warning', title: 'Vendor belum terdaftar', error: 'Nama vendor harus sama persis dengan daftar. Lanjutkan hanya jika Anda akan mencentang "Buat vendor baru otomatis" saat impor.', prompt: 'Pilih vendor dari daftar', promptTitle: 'Vendor' });
+  const guide = [
+    ['PANDUAN IMPORT KATALOG BARANG — Event Management Gontor 3'], [''],
+    ['1. Isi data di sheet "Katalog" mulai baris ke-2. JANGAN mengubah, menghapus, atau memindah baris judul (baris 1).'],
+    ['2. Kolom bertanda * WAJIB diisi: Nama Barang, Vendor, Harga Vendor.'],
+    ['3. VENDOR: pilih dari dropdown (daftar ada di sheet "Daftar Vendor"). Ejaan harus sama persis dengan yang terdaftar di aplikasi.'],
+    ['   Vendor baru? Tambahkan dulu di aplikasi (menu Vendor & Akun), ATAU centang "Buat vendor baru otomatis" saat impor.'],
+    ['4. HARGA: tulis angka saja, tanpa "Rp", titik, atau koma. Contoh BENAR: 1500000. Contoh SALAH: Rp 1.500.000,- atau 1,5 jt'],
+    ['5. Harga Estimasi (harga untuk panitia) boleh dikosongkan → otomatis disamakan dengan Harga Vendor.'],
+    ['6. KATEGORI: pilih dari dropdown. Kosong atau tidak dikenal → otomatis "Lainnya".'],
+    ['7. SATUAN: unit, set, paket, buah, lembar, roll, meter, m², titik, hari. Kosong → "unit".'],
+    ['8. Baris yang Nama Barang-nya diawali "CONTOH" otomatis DILEWATI. Boleh dihapus.'],
+    ['9. Barang dengan Nama + Vendor yang sudah ada di aplikasi akan DIPERBARUI harganya (tidak dobel).'],
+    ['10. Jangan menggabungkan sel (merge cells), jangan ada baris kosong di tengah, jangan pakai rumus yang error (#N/A, #REF!).'],
+    ['11. Maksimal 1000 baris per impor. Simpan sebagai .xlsx (Excel). Dari Google Sheets: File → Download → Microsoft Excel (.xlsx).'],
+    ['12. Saat diunggah, aplikasi menampilkan PRATINJAU lebih dulu dan menandai baris bermasalah beserta alasannya. Tidak ada yang tersimpan sebelum Anda menekan tombol Impor.'],
+    [''], ['Tips: gunakan tombol "Ekspor Excel" di aplikasi untuk mengunduh katalog saat ini, ubah harganya, lalu impor kembali.']
+  ];
+  XLSXLite.write([
+    { name: 'Katalog', header: true, rows: [IMP_HEAD, ...data], widths: [44, 34, 22, 10, 20, 20, 34], money: [4, 5], validations },
+    { name: 'Petunjuk', rows: guide, widths: [130] },
+    { name: 'Daftar Vendor', header: true, rows: [['Nama Vendor (salin persis ke kolom Vendor)', 'ID Vendor', 'PIC'], ...vendors.map((v) => [v.nama_vendor, v.id_vendor, v.pic || ''])], widths: [44, 26, 24] },
+    { name: 'Daftar Kategori', header: true, rows: [['Kategori'], ...KATEGORI.map((k) => [k])], widths: [28] },
+    { name: 'Daftar Satuan', header: true, rows: [['Satuan'], ...SATUAN.map((k) => [k])], widths: [14] }
+  ], withData ? `Katalog_Barang_Gontor3_${App.today}.xlsx` : 'Template_Import_Katalog_Gontor3.xlsx');
+  toast(withData ? 'Katalog diekspor ke Excel.' : 'Template Excel diunduh. Baca sheet "Petunjuk" sebelum mengisi.', 'success');
+}
+
+ACT['kat-import'] = () => {
+  if (!D().vendor.length) toast('Belum ada vendor. Tambahkan vendor dulu, atau centang "Buat vendor baru otomatis" saat impor.', 'info', 6000);
+  IM.rows = []; IM.file = ''; IM.sheet = '';
+  const m = Modal.open({
+    title: 'Import Katalog dari Excel', sub: 'Tambah atau perbarui banyak barang sekaligus.', size: 'xl',
+    body: `
+      <div class="grid-3" style="margin-bottom:16px">
+        <div class="remind"><div class="row" style="gap:10px"><span class="li-ic mint">1</span><b style="font-family:var(--font-head)">Unduh template</b></div>
+          <div class="small muted">Sudah berisi kolom yang benar, dropdown vendor & kategori, serta sheet <b>Petunjuk</b>.</div>
+          <div class="row wrap"><button class="btn btn-primary btn-sm" type="button" data-act="kat-template">${ic('download', 15)} Template Excel</button><button class="btn btn-soft btn-sm" type="button" data-act="kat-export">${ic('download', 15)} Katalog saat ini</button></div></div>
+        <div class="remind"><div class="row" style="gap:10px"><span class="li-ic mint">2</span><b style="font-family:var(--font-head)">Isi sesuai panduan</b></div>
+          <div class="small muted">Kolom wajib: <b>Nama Barang</b>, <b>Vendor</b>, <b>Harga Vendor</b>. Harga ditulis angka saja, misalnya <span class="mono">1500000</span>.</div>
+          <button class="btn btn-ghost btn-sm" type="button" id="im-guide-btn">${ic('info', 15)} Lihat panduan lengkap</button></div>
+        <div class="remind"><div class="row" style="gap:10px"><span class="li-ic mint">3</span><b style="font-family:var(--font-head)">Unggah & periksa</b></div>
+          <label class="upload" style="padding:10px"><span class="u-ic">${ic('upload', 20)}</span><span class="grow" style="min-width:0"><span class="u-t ellipsis" id="im-file-t" style="display:block">Pilih berkas .xlsx / .csv</span><span class="u-s">Pratinjau muncul sebelum disimpan</span></span><input type="file" id="im-file" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"></label></div>
+      </div>
+      <div id="im-guide" hidden class="callout info" style="margin-bottom:16px;display:block"><div>
+        <b>Panduan pengisian agar tidak error</b>
+        <ol style="margin:8px 0 0;padding-left:18px;line-height:1.7">
+          <li>Gunakan template dari tombol <b>Template Excel</b>. Jangan ubah baris judul (baris 1).</li>
+          <li><b>Vendor</b> harus sama persis dengan yang terdaftar (pilih dari dropdown). Vendor baru: tambahkan dulu di menu Vendor & Akun, atau centang <b>Buat vendor baru otomatis</b> di bawah.</li>
+          <li><b>Harga</b> berupa angka saja tanpa "Rp", titik, atau koma. Contoh benar: <span class="mono">1500000</span>.</li>
+          <li><b>Harga Estimasi</b> boleh kosong (otomatis sama dengan harga vendor). <b>Kategori</b> & <b>Satuan</b> boleh kosong (menjadi "Lainnya" & "unit").</li>
+          <li>Baris berawalan <b>CONTOH</b> otomatis dilewati. Barang dengan nama + vendor yang sama akan <b>diperbarui</b>, bukan dobel.</li>
+          <li>Jangan menggabungkan sel (merge) dan jangan pakai rumus yang error. Maksimal 1000 baris. Simpan sebagai <b>.xlsx</b>; dari Google Sheets: File → Download → Microsoft Excel.</li>
+        </ol></div></div>
+      <div class="row wrap" style="gap:18px;margin-bottom:6px">
+        <label class="check small"><input type="checkbox" id="im-update" checked> Perbarui harga barang yang sudah ada (nama & vendor sama)</label>
+        <label class="check small"><input type="checkbox" id="im-newv"> Buat vendor baru otomatis bila belum terdaftar</label>
+      </div>
+      <div id="im-result">${emptyState('Belum ada berkas', 'Unggah berkas Excel untuk melihat pratinjau.', 'file')}</div>`,
+    foot: `<span class="note">${ic('shield', 14)} Data hanya disimpan setelah Anda menekan Impor.</span><button class="btn btn-ghost" data-modal-close>Batal</button><button class="btn btn-primary" id="im-go" disabled>${ic('upload', 16)} Impor</button>`
+  });
+  IM.update = true; IM.buatVendor = false;
+  m.querySelector('#im-guide').hidden = true;
+  m.querySelector('#im-guide-btn').addEventListener('click', () => { const g = m.querySelector('#im-guide'); g.hidden = !g.hidden; });
+  m.querySelector('#im-update').addEventListener('change', (e) => { IM.update = e.target.checked; if (IM.rows.length) impRenderResult(m); });
+  m.querySelector('#im-newv').addEventListener('change', (e) => { IM.buatVendor = e.target.checked; if (IM.rows.length) impRenderResult(m); });
+  m.querySelector('#im-file').addEventListener('change', async (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    m.querySelector('#im-file-t').textContent = f.name;
+    m.querySelector('#im-result').innerHTML = `<div class="sk sk-row"></div><div class="sk sk-row"></div>`;
+    try {
+      const { sheet, rows } = await XLSXLite.readFile(f, /katalog/i);
+      let h = -1, map = null;
+      for (let i = 0; i < Math.min(rows.length, 15); i++) {
+        const mp = impHeaderMap(rows[i]);
+        if (mp.nama_barang !== undefined && mp.vendor !== undefined && mp.harga_vendor !== undefined) { h = i; map = mp; break; }
+      }
+      if (h < 0) throw new Error('Baris judul kolom tidak ditemukan. Pastikan ada kolom "Nama Barang", "Vendor", dan "Harga Vendor" — sebaiknya gunakan Template Excel.');
+      const get = (r, k) => (map[k] !== undefined ? r[map[k]] : '');
+      const data = [];
+      rows.slice(h + 1).forEach((r, i) => {
+        if (!r || r.every((c) => String(c === undefined || c === null ? '' : c).trim() === '')) return;
+        const nama = String(get(r, 'nama_barang') ?? '').trim();
+        data.push({ baris: h + 2 + i, nama, skip: /^contoh\b/i.test(nama), vendorRaw: get(r, 'vendor'), katRaw: get(r, 'kategori'), satRaw: get(r, 'satuan'), hvRaw: get(r, 'harga_vendor'), heRaw: get(r, 'harga_estimasi'), spes: String(get(r, 'spesifikasi') ?? '').trim() });
+      });
+      if (!data.length) throw new Error('Tidak ada baris data di bawah judul kolom.');
+      if (data.length > 1000) throw new Error('Berkas berisi ' + data.length + ' baris. Maksimal 1000 baris per impor — bagi menjadi beberapa berkas.');
+      Object.assign(IM, { rows: data, file: f.name, sheet });
+      impRenderResult(m);
+    } catch (err) {
+      IM.rows = [];
+      m.querySelector('#im-result').innerHTML = `<div class="callout bad">${ic('alert', 18)}<div><b>Berkas tidak dapat dibaca.</b><br>${esc(err.message)}</div></div>`;
+      m.querySelector('#im-go').disabled = true;
+    }
+    e.target.value = '';
+  });
+  m.querySelector('#im-go').addEventListener('click', async (e) => {
+    impValidate();
+    const items = IM.rows.filter((r) => r.status === 'baru' || r.status === 'update').map((r) => ({
+      baris: r.baris, id_vendor: r.id_vendor, vendor_baru: r.vendor_baru, nama_barang: r.nama, kategori: r.kategori, satuan: r.satuan,
+      harga_vendor: r.harga_vendor, harga_estimasi: r.harga_estimasi, spesifikasi: r.spes
+    }));
+    if (!items.length) return;
+    const nErr = IM.rows.filter((r) => r.status === 'error').length;
+    if (nErr && !await confirmDialog({ title: 'Lewati baris error?', message: `${nErr} baris bermasalah akan dilewati. Lanjut mengimpor ${items.length} baris yang valid?`, okText: 'Lanjutkan Impor' })) return;
+    const res = await App.write('importBarang', { items, update: IM.update, buatVendor: IM.buatVendor }, { btn: e.currentTarget, busyText: 'Mengimpor ' + items.length + ' baris...', toast: false });
+    if (res.success) toast(res.message, 'success', 6000);
   });
 };

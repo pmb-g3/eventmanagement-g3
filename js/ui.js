@@ -117,7 +117,7 @@ function relDay(s, today) {
   if (n === -1) return 'Kemarin';
   return n > 0 ? n + ' hari lagi' : Math.abs(n) + ' hari lalu';
 }
-function initials(name) { return String(name || '?').replace(/^(ust\.?|ustadz|pak|bu|mas)\s+/i, '').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?'; }
+function initials(name) { return String(name || '?').replace(/\(.*?\)/g, ' ').replace(/^(ust\.?|ustadz|pak|bu|mas)\s+/i, '').split(/\s+/).map((w) => w.replace(/[^A-Za-z0-9]/g, '')).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?'; }
 function terbilang(n) {
   n = Math.floor(Math.abs(num(n)));
   const s = ['', 'satu', 'dua', 'tiga', 'empat', 'lima', 'enam', 'tujuh', 'delapan', 'sembilan', 'sepuluh', 'sebelas'];
@@ -152,12 +152,14 @@ function payBadge(status, label) {
   if (status === '-') return badge('Belum ada tagihan', 'b-neu');
   return badge(label ? label + ' ' + status : status, STATUS_CLASS[status]);
 }
+/* Jatuh tempo = sekian hari (ambang) setelah acara selesai/dibongkar */
 function agingPill(umur, ambang, done) {
   if (done) return badge('Selesai', 'b-ok');
   if (!umur) return badge('Belum jatuh tempo', 'b-neu');
-  if (umur >= ambang) return `<span class="badge b-bad aging pulse">${umur} hari — Perlu ditagih</span>`;
-  if (umur >= Math.ceil(ambang / 2)) return badge(umur + ' hari — Pantau', 'b-warn');
-  return badge(umur + ' hari — Normal', 'b-info');
+  const sisa = ambang - umur;
+  if (sisa > 0) return badge((sisa === 1 ? 'Besok' : sisa + ' hari lagi') + ' jatuh tempo', sisa <= Math.ceil(ambang / 2) ? 'b-warn' : 'b-info');
+  if (sisa === 0) return '<span class="badge b-bad aging pulse">Jatuh tempo hari ini</span>';
+  return `<span class="badge b-bad aging pulse">Lewat ${-sisa} hari — Tagih</span>`;
 }
 
 /* ---------- Toast ---------- */

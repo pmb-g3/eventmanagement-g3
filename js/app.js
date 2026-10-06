@@ -2,6 +2,8 @@
  *  APP.JS — inti aplikasi: login, sesi, router, kerangka tampilan
  * ===================================================================== */
 
+const MIN_BACKEND = '1.2.0'; // versi Kode.gs minimal untuk frontend ini
+
 const ADMIN_NAV = [
   { r: 'beranda', label: 'Beranda & Pengingat', short: 'Beranda', icon: 'home', badge: () => App.reminderCount() },
   { r: 'acara', label: 'Daftar Acara', short: 'Acara', icon: 'calendar' },
@@ -116,7 +118,8 @@ const App = {
       this.renderView(false);
       if (opts.after) opts.after(res);
     } else if (res.code !== 'AUTH') {
-      toast(res.message || 'Terjadi kesalahan.', 'error', 5500);
+      const old = /Aksi tidak dikenal/.test(res.message || '');
+      toast(old ? 'Fitur ini butuh backend terbaru: tempel Kode.gs versi baru di Apps Script lalu Deploy → Manage deployments → New version.' : (res.message || 'Terjadi kesalahan.'), 'error', old ? 9000 : 5500);
     }
     return res;
   },
@@ -133,7 +136,7 @@ const App = {
     if (!this.isAdmin) return 0;
     const t = this.data.fin.total;
     const today = this.today, besok = addDays(today, 1);
-    const ks = (this.data.konsumsi || []).filter((k) => !k.sudah_diingatkan && (k.tanggal === today || k.tanggal === besok)).length;
+    const ks = (this.data.konsumsi || []).filter((k) => !k.sudah_diingatkan && (k.tanggal === today || k.tanggal === besok) && !this.acara(k.id_acara).nonaktif).length;
     return (t.n_lewat || 0) + (t.n_setoran_lewat || 0) + ks;
   },
 
@@ -195,6 +198,10 @@ const App = {
 
   enter() {
     this.hideSplash();
+    if (this.isAdmin && this.data.sys && this.data.sys.version < MIN_BACKEND && !this._verWarned) {
+      this._verWarned = true;
+      setTimeout(() => toast('Backend (Kode.gs) masih versi ' + this.data.sys.version + '. Tempel Kode.gs terbaru lalu Deploy → Manage deployments → New version agar fitur baru berfungsi.', 'warn', 9000), 1200);
+    }
     document.getElementById('login-view').hidden = true;
     document.getElementById('login-view').innerHTML = '';
     document.getElementById('app-shell').hidden = false;
@@ -227,7 +234,8 @@ const App = {
   },
 
   forceChangePassword() {
-    const m = Modal.open({
+    if (document.getElementById('fcp-modal')) return; // jangan membuka dua kali
+    const m = Modal.open({ id: 'fcp-modal',
       title: 'Ganti Kata Sandi Awal', sub: 'Demi keamanan, ganti kata sandi bawaan sebelum melanjutkan.', size: 'sm', dismissable: false,
       body: `<form id="fcp" class="form-grid" style="grid-template-columns:1fr">
         <div class="field"><label>Kata sandi saat ini</label><input class="input" type="password" id="fcp-old" autocomplete="current-password" required></div>
@@ -279,10 +287,10 @@ const App = {
     document.getElementById('topbar').innerHTML = `
       <div class="top-brand"><span class="logo-mark" style="width:36px;height:36px;border-radius:11px"></span><div class="stack" style="gap:0;min-width:0"><div class="brand-name ellipsis">${admin ? 'G3 Darussalam' : 'Portal Vendor'}</div><div class="small muted ellipsis">${admin ? '<span class="badge b-ok no-dot" style="padding:0 8px;font-size:10px">Admin</span>' : esc(vendorName)}</div></div></div>
       ${admin ? `<form class="search" id="top-search"><span>${ic('search', 17)}</span><input type="search" id="top-q" placeholder="Cari acara, barang, atau rekanan vendor..."></form>` : '<div class="spacer"></div>'}
-      <div class="spacer" style="flex:0"></div>
+      <div class="spacer"></div>
       <span class="top-pill">${ic('calendar', 15)} ${hijri(this.today)} / ${tgl(this.today)}</span>
       <button class="icon-btn" id="btn-sync" data-act="sync" aria-label="Muat ulang data" title="Muat ulang data">${ic('refresh', 18)}</button>
-      <button class="icon-btn" data-act="theme" aria-label="Ganti tema" title="Ganti tema">${ic(th ? 'sun' : 'moon', 18)}</button>
+      <button class="icon-btn top-theme" data-act="theme" aria-label="Ganti tema" title="Ganti tema">${ic(th ? 'sun' : 'moon', 18)}</button>
       <button class="icon-btn" data-act="bell" aria-label="Pengingat" title="Pengingat">${ic('bell', 18)}${bell ? `<span class="dot">${bell}</span>` : ''}</button>
       <div class="user-chip" data-act="${admin ? 'go' : 'go'}" data-r="${admin ? 'pengaturan' : 'profil'}" title="Profil"><div class="stack" style="gap:0"><span class="n ellipsis">${esc(u.nama || '')}</span><span class="r">${admin ? 'Super Admin' : 'Rekan Vendor'}</span></div><span class="avatar">${initials(u.nama)}</span></div>`;
     const bottom = admin ? ADMIN_NAV.filter((n) => ADMIN_BOTTOM.includes(n.r)) : VENDOR_NAV;
@@ -363,7 +371,7 @@ const App = {
       sync: () => this.refresh(false).then((ok) => ok && toast('Data terbaru sudah dimuat.', 'success', 2000)),
       go: () => this.go(el.dataset.r),
       bell: () => this.go(this.isAdmin ? 'beranda' : 'acara'),
-      forgot: () => toast(this.loginTab === 'admin' ? 'Admin: jalankan fungsi resetPasswordAdmin() di editor Apps Script.' : 'Hubungi Ustadz Admin Bagian Acara untuk reset kata sandi.', 'info', 6000),
+      forgot: () => toast(this.loginTab === 'admin' ? 'Admin: jalankan fungsi resetPasswordAdmin() di editor Apps Script.' : 'Hubungi Ustadz PJ. Vendor untuk reset kata sandi.', 'info', 6000),
       'pw-toggle': () => {
         const inp = document.getElementById('lg-pass');
         inp.type = inp.type === 'password' ? 'text' : 'password';

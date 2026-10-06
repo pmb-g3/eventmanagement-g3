@@ -112,7 +112,45 @@ Jika tampilan belum berubah, tekan **Ctrl+Shift+R**.
 
 ---
 
-## E. MASALAH UMUM
+## E. FITUR TAMBAHAN (versi 1.1 & 1.2)
+
+### E1. Import katalog dari Excel
+1. Buka **Katalog Barang**, lalu klik **Import Excel** → **Template Excel**.
+2. Isi sheet **Katalog** sesuai sheet **Petunjuk**. Kolom Vendor & Kategori sudah berupa *dropdown*.
+   - Kolom wajib: **Nama Barang**, **Vendor**, **Harga Vendor**.
+   - Harga ditulis angka saja, misalnya `1500000`.
+   - Baris yang diawali `CONTOH` otomatis dilewati.
+3. Unggah berkas `.xlsx` atau `.csv`. Aplikasi menampilkan **pratinjau** dan menandai baris yang error beserta alasannya.
+4. Klik **Impor**. Barang dengan nama & vendor yang sama akan **diperbarui** harganya, tidak dobel.
+5. Untuk mengubah harga massal: klik **Ekspor Excel**, ubah harga di Excel, lalu impor kembali.
+
+### E2. Edit format pesan WhatsApp
+- Klik **Edit Format** di kartu pengingat konsumsi, di halaman Setoran Panitia, atau di **Pengaturan → Format Pesan WhatsApp**.
+- Kata dalam `{kurung kurawal}` otomatis diganti data asli, misalnya `{acara}` dan `{kekurangan}`. Klik tombol *Sisipkan data* untuk memasukkannya.
+- Gunakan **Kembalikan bawaan** untuk kembali ke format awal.
+
+### E3. Nonaktifkan acara & akun (v1.2)
+- **Acara:** buka detail acara, lalu klik **Nonaktifkan**. Acara akan hilang dari daftar, pengingat, total Beranda, dan portal vendor, tetapi datanya tetap tersimpan.
+  Untuk melihatnya lagi, centang **Lihat acara nonaktif** di Daftar Acara, lalu klik **Aktifkan kembali**.
+- **Akun:** buka **Vendor & Akun**, lalu klik **Nonaktifkan** pada tabel akun. Pengguna itu langsung keluar dan tidak bisa login sampai diaktifkan lagi.
+- Kolom "Umur" kini bernama **Jatuh Tempo**. Jatuh tempo = jumlah hari di Pengaturan (bawaan 14) setelah acara selesai/dibongkar.
+- Kolom baru di Google Sheets ditambahkan **otomatis**. Tidak perlu menjalankan setup ulang.
+
+### E4. Cara memperbarui aplikasi yang sudah terpasang
+1. **Backend:** buka editor Apps Script, ganti seluruh isi `Kode.gs` dengan versi baru, lalu simpan.
+   Setelah itu buka **Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy**.
+   Jangan jalankan `setupAppEnvironment` lagi. URL tetap sama.
+2. **Frontend:** ekstrak ZIP baru, lalu salin semua berkasnya ke folder repository Anda dan timpa berkas lama, **kecuali `js/config.js`**. Berkas itu berisi GAS_URL Anda.
+   Setelah itu jalankan:
+   ```bash
+   git add .
+   git commit -m "Update v1.2"
+   git push
+   ```
+
+---
+
+## F. MASALAH UMUM
 
 | Gejala | Solusi |
 |---|---|
@@ -124,6 +162,9 @@ Jika tampilan belum berubah, tekan **Ctrl+Shift+R**.
 | Perubahan kode backend tidak berlaku | Manage deployments → Edit → **New version** |
 | Halaman 404 di GitHub Pages | Pastikan `index.html` ada di root repository (bukan di subfolder) |
 | Tampilan tanpa warna (CSS 404) | Folder `css/` & `js/` harus ikut ter-push. Gunakan terminal, bukan upload web |
+| Muncul pesan "butuh backend terbaru" | Lakukan langkah E4 nomor 1 (Kode.gs baru + New version) |
+| Import Excel: "Format .xls belum didukung" | Di Excel: File → Save As → *Excel Workbook (.xlsx)* |
+| Import Excel: vendor "belum terdaftar" | Samakan ejaan dengan sheet *Daftar Vendor*, tambahkan vendor di aplikasi, atau centang *Buat vendor baru otomatis* |
 | Tanggal bergeser 1 hari | Pastikan `appsscript.json` memakai `"timeZone": "Asia/Jakarta"` |
 
 ---
