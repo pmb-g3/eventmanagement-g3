@@ -2,7 +2,7 @@
  *  APP.JS — inti aplikasi: login, sesi, router, kerangka tampilan
  * ===================================================================== */
 
-const FRONTEND_VERSION = '1.4.0'; // harus sama dengan <meta name="app-version"> di index.html
+const FRONTEND_VERSION = '1.4.1'; // harus sama dengan <meta name="app-version"> di index.html
 const MIN_BACKEND = '1.4.0'; // versi Kode.gs minimal untuk frontend ini
 
 const ADMIN_NAV = [

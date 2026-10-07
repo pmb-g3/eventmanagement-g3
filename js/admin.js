@@ -745,17 +745,17 @@ function openPesananEditor(ida) {
       const ib = root.querySelector('#pe-b').value;
       if (!ib) return toast('Pilih barang dari katalog dulu.', 'warn');
       const k = App.maps.katalog[ib];
-      const ex = PE.items.find((x) => x.id_barang === ib);
-      if (ex) {
-        if (isLuas(ex.satuan) && parseSpek(ex.spek)) { ex.qty_unit = (num(ex.qty_unit) || 1) + 1; peRecalc(ex); toast('Barang sudah ada — jumlah unit ditambah 1.', 'info', 2200); }
-        else { ex.jumlah = num(ex.jumlah) + 1; toast('Barang sudah ada — jumlah ditambah 1.', 'info', 2200); }
-      } else {
-        const sp = parseSpek(k.spesifikasi) ? k.spesifikasi.match(/\d+(?:[.,]\d+)?\s*(?:m(?:eter)?)?\s*[x×X*]\s*\d+(?:[.,]\d+)?/)[0] : parseSpek(k.nama_barang) ? k.nama_barang.match(/\d+(?:[.,]\d+)?\s*(?:m(?:eter)?)?\s*[x×X*]\s*\d+(?:[.,]\d+)?/)[0] : '';
-        const it = Object.assign(peDefaults(root), { id_vendor: k.id_vendor, id_barang: k.id_barang, nama_barang: k.nama_barang, kategori: k.kategori, satuan: k.satuan, jumlah: 1, spek: sp, qty_unit: 1, harga_estimasi_satuan: k.harga_estimasi, harga_vendor_satuan: k.harga_vendor });
-        peRecalc(it);
-        PE.items.push(it);
-      }
+      // Barang yang sama selalu dibuat baris baru (bisa beda spek/ukuran)
+      const dupIdx = PE.items.findIndex((x) => x.id_barang === ib);
+      const sp = parseSpek(k.spesifikasi) ? k.spesifikasi.match(/\d+(?:[.,]\d+)?\s*(?:m(?:eter)?)?\s*[x×X*]\s*\d+(?:[.,]\d+)?/)[0] : parseSpek(k.nama_barang) ? k.nama_barang.match(/\d+(?:[.,]\d+)?\s*(?:m(?:eter)?)?\s*[x×X*]\s*\d+(?:[.,]\d+)?/)[0] : '';
+      const it = Object.assign(peDefaults(root), { id_vendor: k.id_vendor, id_barang: k.id_barang, nama_barang: k.nama_barang, kategori: k.kategori, satuan: k.satuan, jumlah: 1, spek: dupIdx >= 0 ? '' : sp, qty_unit: 1, harga_estimasi_satuan: k.harga_estimasi, harga_vendor_satuan: k.harga_vendor });
+      peRecalc(it);
+      PE.items.push(it);
+      if (dupIdx >= 0) toast(`"${k.nama_barang}" sudah ada di baris ${dupIdx + 1}. Baris baru ditambahkan di bawah — isi spek/ukurannya.`, 'info', 4500);
       PE.dirty = true; renderPERows(root);
+      const last = PE.items.length - 1;
+      const rowEl = root.querySelectorAll('.pe-row')[last];
+      if (rowEl) { rowEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); if (dupIdx >= 0) { const sIn = rowEl.querySelector('[data-f="spek"]'); if (sIn) sIn.focus(); } }
     } else if (b.id === 'pe-manual') {
       const iv = root.querySelector('#pe-v').value;
       if (!iv) return toast('Pilih vendor dulu untuk barang di luar katalog.', 'warn');
@@ -773,6 +773,7 @@ function openPesananEditor(ida) {
     for (let i = 0; i < PE.items.length; i++) {
       const it = PE.items[i];
       if (!String(it.nama_barang || '').trim()) return toast(`Baris ${i + 1}: nama barang wajib diisi.`, 'warn');
+      if (isLuas(it.satuan) && !it.spek && !it.id_pesanan) return toast(`Baris ${i + 1} (${it.nama_barang}): isi Spek ukurannya, mis. 6x6.`, 'warn', 6000);
       if (isLuas(it.satuan) && !parseSpek(it.spek) && it.spek) return toast(`Baris ${i + 1} (${it.nama_barang}): spek "${it.spek}" tidak terbaca. Tulis seperti 6x6 atau 4,5x10.`, 'warn', 6000);
       if (!(num(it.hari) >= 1 || !it.hari)) return toast(`Baris ${i + 1}: lama sewa minimal 1 hari.`, 'warn');
       if (!(num(it.jumlah) > 0)) return toast(`Baris ${i + 1}: jumlah harus lebih dari 0${isLuas(it.satuan) ? ' — isi spek ukuran, mis. 6x6' : ''}.`, 'warn');
