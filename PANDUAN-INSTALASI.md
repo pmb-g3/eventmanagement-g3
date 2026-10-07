@@ -112,7 +112,7 @@ Jika tampilan belum berubah, tekan **Ctrl+Shift+R**.
 
 ---
 
-## E. FITUR TAMBAHAN (versi 1.1 & 1.2)
+## E. FITUR TAMBAHAN (versi 1.1 – 1.3)
 
 ### E1. Import katalog dari Excel
 1. Buka **Katalog Barang**, lalu klik **Import Excel** → **Template Excel**.
@@ -136,7 +136,15 @@ Jika tampilan belum berubah, tekan **Ctrl+Shift+R**.
 - Kolom "Umur" kini bernama **Jatuh Tempo**. Jatuh tempo = jumlah hari di Pengaturan (bawaan 14) setelah acara selesai/dibongkar.
 - Kolom baru di Google Sheets ditambahkan **otomatis**. Tidak perlu menjalankan setup ulang.
 
-### E4. Cara memperbarui aplikasi yang sudah terpasang
+### E4. Spek ukuran & satuan m² di pesanan (v1.3)
+- Di **Kelola Pesanan**, setiap barang punya kolom **Spek / Ukuran** dan pilihan **satuan**.
+- Jika satuannya **m²**, tulis ukurannya seperti `6x6`, `6 x 6`, atau `4,5x10`, lalu isi jumlah unitnya.
+  **Jumlah m²** akan terhitung otomatis. Contoh: 2 unit × 6×6 = **72 m²**, sehingga biayanya 72 × harga per m².
+- Untuk satuan lain (unit, buah, dll.), Spek hanya berupa catatan dan jumlah diisi manual.
+- Spek ikut tampil di tabel barang, PDF estimasi & rekap, serta portal vendor.
+- Tips: agar langsung bersatuan m² saat ditambahkan dari katalog, atur satuan barang tenda di **Katalog Barang** menjadi `m²`.
+
+### E5. Cara memperbarui aplikasi yang sudah terpasang
 1. **Backend:** buka editor Apps Script, ganti seluruh isi `Kode.gs` dengan versi baru, lalu simpan.
    Setelah itu buka **Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy**.
    Jangan jalankan `setupAppEnvironment` lagi. URL tetap sama.
@@ -144,7 +152,7 @@ Jika tampilan belum berubah, tekan **Ctrl+Shift+R**.
    Setelah itu jalankan:
    ```bash
    git add .
-   git commit -m "Update v1.2"
+   git commit -m "Update v1.3"
    git push
    ```
 
@@ -162,7 +170,7 @@ Jika tampilan belum berubah, tekan **Ctrl+Shift+R**.
 | Perubahan kode backend tidak berlaku | Manage deployments → Edit → **New version** |
 | Halaman 404 di GitHub Pages | Pastikan `index.html` ada di root repository (bukan di subfolder) |
 | Tampilan tanpa warna (CSS 404) | Folder `css/` & `js/` harus ikut ter-push. Gunakan terminal, bukan upload web |
-| Muncul pesan "butuh backend terbaru" | Lakukan langkah E4 nomor 1 (Kode.gs baru + New version) |
+| Muncul pesan "butuh backend terbaru" | Lakukan langkah E5 nomor 1 (Kode.gs baru + New version) |
 | Import Excel: "Format .xls belum didukung" | Di Excel: File → Save As → *Excel Workbook (.xlsx)* |
 | Import Excel: vendor "belum terdaftar" | Samakan ejaan dengan sheet *Daftar Vendor*, tambahkan vendor di aplikasi, atau centang *Buat vendor baru otomatis* |
 | Tanggal bergeser 1 hari | Pastikan `appsscript.json` memakai `"timeZone": "Asia/Jakarta"` |

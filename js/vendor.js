@@ -44,7 +44,7 @@ function vendorCard(e, i) {
       <div class="row between" style="margin-bottom:8px"><b style="font-family:var(--font-head);font-size:13.5px">Progres Unit Terpasang</b>${badge(av.terpasang + ' dari ' + items.length + ' terpasang', pct === 100 ? 'b-ok' : 'b-info')}</div>
       <div class="progress" style="margin-bottom:10px"><span style="width:${pct}%"></span></div>
       ${items.map((p) => `<div class="item-row">${stIc(p.status_pasang)}<div class="grow" style="min-width:0"><div class="bold small">${esc(p.nama_barang)}</div>
-        <div class="xs muted">${fmtNum(p.jumlah)} ${esc(p.satuan)} • ${rp(p.harga_vendor_satuan)}/${esc(p.satuan)}${p.tanggal_pasang ? ' • pasang ' + tgl(p.tanggal_pasang) : ''}</div></div>
+        <div class="xs muted">${p.spek ? 'Spek ' + esc(spekText(p)) + ' • ' : ''}${fmtQty(p.jumlah)} ${esc(p.satuan)} • ${rp(p.harga_vendor_satuan)}/${esc(p.satuan)}${p.tanggal_pasang ? ' • pasang ' + tgl(p.tanggal_pasang) : ''}</div></div>
         ${p.status_pasang === 'Belum' || p.status_pasang === 'Penataan'
           ? `<button class="btn btn-mint btn-xs" data-act="v-quick" data-id="${esc(p.id_pesanan)}">${ic('check', 13)} Terpasang</button>`
           : badge(p.status_pasang === 'Dibongkar' ? 'Dibongkar' : 'Sudah Terpasang', p.status_pasang === 'Dibongkar' ? 'b-neu' : 'b-ok')}</div>`).join('')}
@@ -205,7 +205,7 @@ ACT['v-tandai'] = (el) => {
   const m = Modal.open({
     title: 'Tandai Terpasang & Foto Lapangan', sub: esc(a.nama_acara), size: 'lg',
     body: `<div class="row between" style="margin-bottom:10px"><span class="small muted">Atur status tiap barang.</span><button class="btn btn-mint btn-sm" type="button" id="vt-all">${ic('checkCircle', 15)} Tandai semua terpasang</button></div>
-      <div class="stack" style="gap:8px">${items.map((p) => `<div class="item-row" style="flex-wrap:wrap"><div class="grow" style="min-width:180px"><div class="bold small">${esc(p.nama_barang)}</div><div class="xs muted">${fmtNum(p.jumlah)} ${esc(p.satuan)}${p.lokasi ? ' • ' + esc(p.lokasi) : ''}</div></div>
+      <div class="stack" style="gap:8px">${items.map((p) => `<div class="item-row" style="flex-wrap:wrap"><div class="grow" style="min-width:180px"><div class="bold small">${esc(p.nama_barang)}</div><div class="xs muted">${p.spek ? esc(spekText(p)) + ' • ' : ''}${fmtQty(p.jumlah)} ${esc(p.satuan)}${p.lokasi ? ' • ' + esc(p.lokasi) : ''}</div></div>
         <div style="width:290px;max-width:100%">${seg('vt-' + p.id_pesanan, ['Belum', 'Penataan', 'Terpasang'], p.status_pasang, 'sm')}</div></div>`).join('')}</div>
       <div class="field section" style="margin-top:18px"><label>Foto pemasangan (opsional, bisa lebih dari satu)</label>
         <label class="upload"><span class="u-ic">${ic('camera', 20)}</span><span class="grow"><span class="u-t">Ambil / pilih foto</span><br><span class="u-s">Maks. 8 foto • dikompres otomatis</span></span><input type="file" id="vt-foto" accept="image/*" multiple></label>

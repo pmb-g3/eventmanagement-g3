@@ -86,6 +86,22 @@ function rpShort(n) {
   if (v >= 1e6) return s + 'Rp ' + (v / 1e6).toFixed(2).replace('.', ',').replace(/,?0+$/, '') + ' jt';
   return rp(n);
 }
+function fmtQty(n) {
+  const v = Math.round(num(n) * 100) / 100;
+  if (Number.isInteger(v)) return fmtNum(v);
+  const [a, b] = v.toFixed(2).replace(/0+$/, '').split('.');
+  return fmtNum(Number(a)) + ',' + b;
+}
+/* Satuan luas (m²): jumlah = jumlah unit × panjang × lebar dari spek "6x6" */
+function isLuas(satuan) { return /^(m²|m2|m\^2|meter persegi|mtr2)$/i.test(String(satuan || '').trim()); }
+function parseSpek(spek) {
+  const m = String(spek || '').replace(/,/g, '.').match(/(\d+(?:\.\d+)?)\s*(?:m(?:eter)?)?\s*[x×X*]\s*(\d+(?:\.\d+)?)/);
+  return m ? { p: parseFloat(m[1]), l: parseFloat(m[2]) } : null;
+}
+function spekText(it) {
+  if (!it.spek) return '';
+  return it.spek + (isLuas(it.satuan) ? ' × ' + (num(it.qty_unit) || 1) + ' unit' : '');
+}
 function parseMoney(s) { const d = String(s || '').replace(/[^\d]/g, ''); return d ? parseInt(d, 10) : 0; }
 function isYMD(s) { return /^\d{4}-\d{2}-\d{2}$/.test(String(s || '').slice(0, 10)); }
 function parseYMD(s) { const p = String(s).slice(0, 10).split('-').map(Number); return new Date(p[0], p[1] - 1, p[2]); }

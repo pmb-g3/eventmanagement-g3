@@ -8,6 +8,7 @@ const STATUS_PASANG = ['Belum', 'Penataan', 'Terpasang', 'Dibongkar'];
 const KATEGORI = ['Tenda & Terop', 'Panggung', 'Rigging & Truss', 'Sound & Lighting', 'Kursi & Meja', 'Karpet & Permadani',
   'Sofa & Dekorasi', 'Pendingin & Kipas', 'Barikade & Keamanan', 'Genset & Listrik', 'Lainnya'];
 const SATUAN = ['unit', 'set', 'paket', 'buah', 'lembar', 'roll', 'meter', 'm²', 'titik', 'hari'];
+const satuanOpts = (v) => selectOpts(SATUAN.includes(v) || !v ? SATUAN : [v, ...SATUAN], v || 'unit');
 const KAT_ICON = { 'Tenda & Terop': 'tent', Panggung: 'layers', 'Rigging & Truss': 'layers', 'Sound & Lighting': 'zap', 'Kursi & Meja': 'box', 'Karpet & Permadani': 'list', 'Sofa & Dekorasi': 'box', 'Pendingin & Kipas': 'activity', 'Barikade & Keamanan': 'shield', 'Genset & Listrik': 'zap' };
 
 const AdminState = {
@@ -514,7 +515,7 @@ const AcaraDetail = {
         cols: [
           { key: 'nama_barang', label: 'Barang', main: true, render: (r) => `<div class="row" style="gap:12px"><span class="t-ic">${ic(KAT_ICON[r.kategori] || 'box', 18)}</span><div style="min-width:0"><div class="t-main">${esc(r.nama_barang)}</div><div class="t-sub">${esc(r.kategori)}</div></div></div>` },
           { key: 'id_vendor', label: 'Vendor', sortVal: (r) => App.vName(r.id_vendor), render: (r) => `<span class="small">${esc(App.vName(r.id_vendor))}</span>` },
-          { key: 'jumlah', label: 'Qty', align: 'c', render: (r) => `<span class="tnum">${fmtNum(r.jumlah)} ${esc(r.satuan)}</span>` },
+          { key: 'jumlah', label: 'Qty', align: 'c', render: (r) => `<span class="tnum">${fmtQty(r.jumlah)} ${esc(r.satuan)}</span>${r.spek ? `<div class="xs muted">${esc(spekText(r))}</div>` : ''}` },
           { key: 'harga_vendor_satuan', label: 'Harga Vendor', align: 'r', render: (r) => `<span class="tnum">${rp(r.harga_vendor_satuan)}</span><div class="xs muted tnum">est. ${rp(r.harga_estimasi_satuan)}</div>` },
           { key: 'sub', label: 'Subtotal Riil', align: 'r', sortVal: (r) => r.jumlah * r.harga_vendor_satuan, render: (r) => `<b class="tnum">${rp(r.jumlah * r.harga_vendor_satuan)}</b>` },
           { key: 'tanggal_pasang', label: 'Jadwal', render: (r) => `<span class="small">${r.tanggal_pasang ? tgl(r.tanggal_pasang) : '-'} → ${r.tanggal_bongkar ? tgl(r.tanggal_bongkar) : '-'}</span>` },
@@ -717,8 +718,11 @@ function openPesananEditor(ida) {
     const t = e.target;
     if (t.dataset.f === undefined) return;
     const i = Number(t.dataset.i), f = t.dataset.f, it = PE.items[i];
-    it[f] = f.startsWith('harga') ? parseMoney(t.value) : f === 'jumlah' ? num(t.value) : t.value;
+    const wasLuas = isLuas(it.satuan);
+    it[f] = f.startsWith('harga') ? parseMoney(t.value) : (f === 'jumlah' || f === 'qty_unit') ? num(t.value) : t.value;
     PE.dirty = true;
+    if (f === 'satuan' && wasLuas !== isLuas(it.satuan)) { peRecalc(it); renderPERows(root); return; }
+    if (f === 'spek' || f === 'qty_unit' || f === 'satuan') peSyncRow(root, i);
     updatePETotals(root);
   });
   root.addEventListener('change', async (e) => {
@@ -741,13 +745,20 @@ function openPesananEditor(ida) {
       if (!ib) return toast('Pilih barang dari katalog dulu.', 'warn');
       const k = App.maps.katalog[ib];
       const ex = PE.items.find((x) => x.id_barang === ib);
-      if (ex) { ex.jumlah = num(ex.jumlah) + 1; toast('Barang sudah ada — jumlah ditambah 1.', 'info', 2200); }
-      else PE.items.push(Object.assign(peDefaults(root), { id_vendor: k.id_vendor, id_barang: k.id_barang, nama_barang: k.nama_barang, kategori: k.kategori, satuan: k.satuan, jumlah: 1, harga_estimasi_satuan: k.harga_estimasi, harga_vendor_satuan: k.harga_vendor }));
+      if (ex) {
+        if (isLuas(ex.satuan) && parseSpek(ex.spek)) { ex.qty_unit = (num(ex.qty_unit) || 1) + 1; peRecalc(ex); toast('Barang sudah ada — jumlah unit ditambah 1.', 'info', 2200); }
+        else { ex.jumlah = num(ex.jumlah) + 1; toast('Barang sudah ada — jumlah ditambah 1.', 'info', 2200); }
+      } else {
+        const sp = parseSpek(k.spesifikasi) ? k.spesifikasi.match(/\d+(?:[.,]\d+)?\s*(?:m(?:eter)?)?\s*[x×X*]\s*\d+(?:[.,]\d+)?/)[0] : parseSpek(k.nama_barang) ? k.nama_barang.match(/\d+(?:[.,]\d+)?\s*(?:m(?:eter)?)?\s*[x×X*]\s*\d+(?:[.,]\d+)?/)[0] : '';
+        const it = Object.assign(peDefaults(root), { id_vendor: k.id_vendor, id_barang: k.id_barang, nama_barang: k.nama_barang, kategori: k.kategori, satuan: k.satuan, jumlah: 1, spek: sp, qty_unit: 1, harga_estimasi_satuan: k.harga_estimasi, harga_vendor_satuan: k.harga_vendor });
+        peRecalc(it);
+        PE.items.push(it);
+      }
       PE.dirty = true; renderPERows(root);
     } else if (b.id === 'pe-manual') {
       const iv = root.querySelector('#pe-v').value;
       if (!iv) return toast('Pilih vendor dulu untuk barang di luar katalog.', 'warn');
-      PE.items.push(Object.assign(peDefaults(root), { id_vendor: iv, id_barang: '', nama_barang: '', kategori: 'Lainnya', satuan: 'unit', jumlah: 1, harga_estimasi_satuan: 0, harga_vendor_satuan: 0, manual: true }));
+      PE.items.push(Object.assign(peDefaults(root), { id_vendor: iv, id_barang: '', nama_barang: '', kategori: 'Lainnya', satuan: 'unit', jumlah: 1, spek: '', qty_unit: 1, harga_estimasi_satuan: 0, harga_vendor_satuan: 0, manual: true }));
       PE.dirty = true; renderPERows(root);
       const inputs = root.querySelectorAll('[data-f="nama_barang"]'); if (inputs.length) inputs[inputs.length - 1].focus();
     } else if (b.id === 'pe-apply') {
@@ -761,14 +772,16 @@ function openPesananEditor(ida) {
     for (let i = 0; i < PE.items.length; i++) {
       const it = PE.items[i];
       if (!String(it.nama_barang || '').trim()) return toast(`Baris ${i + 1}: nama barang wajib diisi.`, 'warn');
-      if (!(num(it.jumlah) > 0)) return toast(`Baris ${i + 1}: jumlah harus lebih dari 0.`, 'warn');
+      if (isLuas(it.satuan) && !parseSpek(it.spek) && it.spek) return toast(`Baris ${i + 1} (${it.nama_barang}): spek "${it.spek}" tidak terbaca. Tulis seperti 6x6 atau 4,5x10.`, 'warn', 6000);
+      if (!(num(it.jumlah) > 0)) return toast(`Baris ${i + 1}: jumlah harus lebih dari 0${isLuas(it.satuan) ? ' — isi spek ukuran, mis. 6x6' : ''}.`, 'warn');
       if (it.tanggal_pasang && it.tanggal_bongkar && it.tanggal_bongkar < it.tanggal_pasang) return toast(`Baris ${i + 1}: tanggal bongkar sebelum tanggal pasang.`, 'warn');
     }
     if (!PE.items.length && !await confirmDialog({ title: 'Kosongkan pesanan?', message: 'Semua barang untuk acara ini akan dihapus.', okText: 'Ya, kosongkan', danger: true })) return;
     const items = PE.items.map((it) => ({
       id_pesanan: it.id_pesanan || '', id_vendor: it.id_vendor, id_barang: it.id_barang || '', nama_barang: it.nama_barang, kategori: it.kategori, satuan: it.satuan,
       jumlah: num(it.jumlah), harga_estimasi_satuan: num(it.harga_estimasi_satuan), harga_vendor_satuan: num(it.harga_vendor_satuan),
-      tanggal_pasang: it.tanggal_pasang || '', tanggal_bongkar: it.tanggal_bongkar || '', lokasi: it.lokasi || '', catatan: it.catatan || ''
+      tanggal_pasang: it.tanggal_pasang || '', tanggal_bongkar: it.tanggal_bongkar || '', lokasi: it.lokasi || '', catatan: it.catatan || '',
+      spek: it.spek || '', qty_unit: num(it.qty_unit) || 1
     }));
     await App.write('savePesananAcara', { id_acara: PE.acara, items }, { btn: e.currentTarget });
   });
@@ -801,7 +814,8 @@ function renderPE(root) {
       <button class="btn btn-soft btn-sm" id="pe-apply" type="button">${ic('layers', 14)} Terapkan ke semua</button>
     </div>
     <div class="pe-scroll"><div>
-      <div class="pe-head"><span>Barang</span><span>Jumlah</span><span>Harga estimasi</span><span>Harga vendor</span><span>Tgl pasang</span><span>Tgl bongkar</span><span>Lokasi</span><span class="right">Subtotal riil</span><span></span></div>
+      <div class="callout info" style="margin-top:12px;padding:9px 12px;font-size:12.5px">${ic('info', 16)}<div>Untuk barang bersatuan <b>m²</b> (mis. tenda per meter), tulis <b>Spek</b> ukurannya seperti <span class="mono">6x6</span> dan jumlah unitnya — <b>Jumlah m²</b> dihitung otomatis (2 unit × 6×6 = 72 m²).</div></div>
+      <div class="pe-head"><span>Barang</span><span>Spek / Ukuran</span><span>Jumlah</span><span>Harga estimasi</span><span>Harga vendor</span><span>Tgl pasang</span><span>Tgl bongkar</span><span>Lokasi</span><span class="right">Subtotal riil</span><span></span></div>
       <div id="pe-rows"></div>
     </div></div>
     <div class="pe-total" id="pe-tot"></div>`}`;
@@ -812,10 +826,14 @@ function renderPERows(root) {
   box.innerHTML = PE.items.length ? PE.items.map((it, i) => `
     <div class="pe-row">
       <div class="pe-name">${it.manual
-        ? `<span class="ml">Nama barang (manual)</span><input class="input sm" data-f="nama_barang" data-i="${i}" value="${esc(it.nama_barang)}" placeholder="Nama barang"><div class="row" style="gap:6px;margin-top:4px"><select class="select sm" data-f="kategori" data-i="${i}" style="flex:1">${selectOpts(KATEGORI, it.kategori)}</select><select class="select sm" data-f="satuan" data-i="${i}" style="width:90px">${selectOpts(SATUAN, it.satuan)}</select></div>`
+        ? `<span class="ml">Nama barang (manual)</span><input class="input sm" data-f="nama_barang" data-i="${i}" value="${esc(it.nama_barang)}" placeholder="Nama barang"><div class="row" style="gap:6px;margin-top:4px"><select class="select sm" data-f="kategori" data-i="${i}" style="flex:1">${selectOpts(KATEGORI, it.kategori)}</select></div>`
         : `<div class="n">${esc(it.nama_barang)}</div>`}
         <div class="v">${esc(App.vName(it.id_vendor))} • ${esc(it.kategori)}</div></div>
-      <div><span class="ml">Jumlah (${esc(it.satuan)})</span><input class="input sm tnum" type="number" min="0" step="any" data-f="jumlah" data-i="${i}" value="${num(it.jumlah)}"></div>
+      <div><span class="ml">Spek / ukuran</span><input class="input sm" data-f="spek" data-i="${i}" value="${esc(it.spek || '')}" placeholder="${isLuas(it.satuan) ? 'mis. 6x6' : 'opsional'}" autocomplete="off">
+        ${isLuas(it.satuan) ? `<div class="row" style="gap:5px;margin-top:4px"><span class="xs muted">×</span><input class="input sm tnum" type="number" min="1" step="1" data-f="qty_unit" data-i="${i}" value="${num(it.qty_unit) || 1}" style="width:64px"><span class="xs muted">unit</span></div>` : ''}</div>
+      <div><span class="ml">Jumlah</span><div class="row" style="gap:4px"><input class="input sm tnum" type="number" min="0" step="any" data-f="jumlah" data-i="${i}" value="${num(it.jumlah)}" style="flex:1;min-width:0" ${isLuas(it.satuan) && parseSpek(it.spek) ? 'readonly title="Dihitung otomatis dari spek"' : ''}></div>
+        <select class="select sm" data-f="satuan" data-i="${i}" style="margin-top:4px">${satuanOpts(it.satuan)}</select>
+        <div class="xs" id="pe-calc-${i}" style="margin-top:3px">${peCalcText(it)}</div></div>
       <div><span class="ml">Harga estimasi</span><input class="input sm tnum money" inputmode="numeric" data-f="harga_estimasi_satuan" data-i="${i}" value="${fmtNum(it.harga_estimasi_satuan)}"></div>
       <div><span class="ml">Harga vendor</span><input class="input sm tnum money" inputmode="numeric" data-f="harga_vendor_satuan" data-i="${i}" value="${fmtNum(it.harga_vendor_satuan)}"></div>
       <div><span class="ml">Tgl pasang</span><input class="input sm" type="date" data-f="tanggal_pasang" data-i="${i}" value="${esc(it.tanggal_pasang)}"></div>
@@ -825,6 +843,24 @@ function renderPERows(root) {
       <div class="pe-del"><button class="btn btn-ghost btn-icon btn-sm tx-bad" data-del="${i}" type="button" aria-label="Hapus baris">${ic('trash', 16)}</button></div>
     </div>`).join('') : `<div style="padding:8px 0">${emptyState('Belum ada barang', 'Pilih vendor & barang dari katalog lalu klik Tambah.', 'box')}</div>`;
   updatePETotals(root);
+}
+function peRecalc(it) {
+  const d = parseSpek(it.spek);
+  if (isLuas(it.satuan) && d) it.jumlah = Math.round((num(it.qty_unit) || 1) * d.p * d.l * 100) / 100;
+}
+function peCalcText(it) {
+  if (!isLuas(it.satuan)) return '';
+  const d = parseSpek(it.spek);
+  if (!d) return `<span class="tx-warn">${it.spek ? 'Spek tidak terbaca' : 'Isi spek, mis. 6x6'}</span>`;
+  return `<span class="tx-ok">= ${num(it.qty_unit) || 1} × ${fmtQty(d.p)}×${fmtQty(d.l)} = ${fmtQty(it.jumlah)} m²</span>`;
+}
+function peSyncRow(root, i) {
+  const it = PE.items[i];
+  peRecalc(it);
+  const q = root.querySelector(`[data-f="jumlah"][data-i="${i}"]`);
+  if (q) { q.value = num(it.jumlah); q.readOnly = isLuas(it.satuan) && !!parseSpek(it.spek); }
+  const c = root.querySelector('#pe-calc-' + i);
+  if (c) c.innerHTML = peCalcText(it);
 }
 function updatePETotals(root) {
   let est = 0, riil = 0;
@@ -876,7 +912,7 @@ AdminViews.pesanan = {
         cols: [
           { key: 'nama_barang', label: 'Barang & Acara', main: true, render: (r) => `<div class="row" style="gap:12px"><span class="t-ic">${ic(KAT_ICON[r.kategori] || 'box', 18)}</span><div style="min-width:0"><div class="t-main">${esc(r.nama_barang)}</div><div class="t-sub"><a href="#/acara/${encodeURIComponent(r.id_acara)}">${esc(App.acara(r.id_acara).nama_acara)}</a></div></div></div>` },
           { key: 'id_vendor', label: 'Vendor', sortVal: (r) => App.vName(r.id_vendor), render: (r) => `<span class="small">${esc(App.vName(r.id_vendor))}</span>` },
-          { key: 'jumlah', label: 'Qty', align: 'c', render: (r) => `<span class="tnum">${fmtNum(r.jumlah)} ${esc(r.satuan)}</span>` },
+          { key: 'jumlah', label: 'Qty', align: 'c', render: (r) => `<span class="tnum">${fmtQty(r.jumlah)} ${esc(r.satuan)}</span>${r.spek ? `<div class="xs muted">${esc(spekText(r))}</div>` : ''}` },
           { key: 'harga_vendor_satuan', label: 'Harga Vendor', align: 'r', render: (r) => `<span class="tnum">${rp(r.harga_vendor_satuan)}</span>` },
           { key: 'sub', label: 'Subtotal', align: 'r', sortVal: (r) => r.jumlah * r.harga_vendor_satuan, render: (r) => `<b class="tnum">${rp(r.jumlah * r.harga_vendor_satuan)}</b>` },
           { key: 'tanggal_pasang', label: 'Pasang', render: (r) => `<span class="small">${tgl(r.tanggal_pasang)}</span>` },
