@@ -112,7 +112,7 @@ Jika tampilan belum berubah, tekan **Ctrl+Shift+R**.
 
 ---
 
-## E. FITUR TAMBAHAN (versi 1.1 – 1.3)
+## E. FITUR TAMBAHAN (versi 1.1 – 1.4)
 
 ### E1. Import katalog dari Excel
 1. Buka **Katalog Barang**, lalu klik **Import Excel** → **Template Excel**.
@@ -143,6 +143,10 @@ Jika tampilan belum berubah, tekan **Ctrl+Shift+R**.
 - Untuk satuan lain (unit, buah, dll.), Spek hanya berupa catatan dan jumlah diisi manual.
 - Spek ikut tampil di tabel barang, PDF estimasi & rekap, serta portal vendor.
 - Tips: agar langsung bersatuan m² saat ditambahkan dari katalog, atur satuan barang tenda di **Katalog Barang** menjadi `m²`.
+- **Lama sewa (Hari)** (v1.4): hari ke-1 dihitung 100% harga, hari ke-2 dan seterusnya **30% per hari**. Contoh: sewa 3 hari = 1 + 0,3 + 0,3 = **×1,6** dari harga.
+  - Nilai bawaannya mengikuti durasi acara. Bisa diubah per barang atau lewat **Terapkan ke semua**.
+  - Persentasenya bisa diganti di **Pengaturan → Tarif sewa hari ke-2 dst**. Pesanan lama tetap memakai tarif saat disimpan, kecuali jumlah harinya diubah.
+- **Pembaruan otomatis** (v1.4): jika ada versi baru di GitHub Pages, aplikasi otomatis memuat ulang ke versi terbaru. Tidak perlu lagi menghapus cache.
 
 ### E5. Cara memperbarui aplikasi yang sudah terpasang
 1. **Backend:** buka editor Apps Script, ganti seluruh isi `Kode.gs` dengan versi baru, lalu simpan.
@@ -152,7 +156,7 @@ Jika tampilan belum berubah, tekan **Ctrl+Shift+R**.
    Setelah itu jalankan:
    ```bash
    git add .
-   git commit -m "Update v1.3"
+   git commit -m "Update v1.4"
    git push
    ```
 

@@ -44,7 +44,7 @@ function vendorCard(e, i) {
       <div class="row between" style="margin-bottom:8px"><b style="font-family:var(--font-head);font-size:13.5px">Progres Unit Terpasang</b>${badge(av.terpasang + ' dari ' + items.length + ' terpasang', pct === 100 ? 'b-ok' : 'b-info')}</div>
       <div class="progress" style="margin-bottom:10px"><span style="width:${pct}%"></span></div>
       ${items.map((p) => `<div class="item-row">${stIc(p.status_pasang)}<div class="grow" style="min-width:0"><div class="bold small">${esc(p.nama_barang)}</div>
-        <div class="xs muted">${p.spek ? 'Spek ' + esc(spekText(p)) + ' • ' : ''}${fmtQty(p.jumlah)} ${esc(p.satuan)} • ${rp(p.harga_vendor_satuan)}/${esc(p.satuan)}${p.tanggal_pasang ? ' • pasang ' + tgl(p.tanggal_pasang) : ''}</div></div>
+        <div class="xs muted">${p.spek ? 'Spek ' + esc(spekText(p)) + ' • ' : ''}${fmtQty(p.jumlah)} ${esc(p.satuan)}${hariText(p) ? ' • ' + esc(hariText(p)) : ''} • ${rp(p.harga_vendor_satuan)}/${esc(p.satuan)}${p.tanggal_pasang ? ' • pasang ' + tgl(p.tanggal_pasang) : ''}</div></div>
         ${p.status_pasang === 'Belum' || p.status_pasang === 'Penataan'
           ? `<button class="btn btn-mint btn-xs" data-act="v-quick" data-id="${esc(p.id_pesanan)}">${ic('check', 13)} Terpasang</button>`
           : badge(p.status_pasang === 'Dibongkar' ? 'Dibongkar' : 'Sudah Terpasang', p.status_pasang === 'Dibongkar' ? 'b-neu' : 'b-ok')}</div>`).join('')}

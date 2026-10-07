@@ -511,13 +511,13 @@ const AcaraDetail = {
         rows: items, pageSize: 15, empty: `${emptyState('Belum ada barang dipesan', 'Klik "Kelola Pesanan" untuk menambahkan barang dari katalog vendor.', 'box')}`,
         search: (r) => r.nama_barang + ' ' + App.vName(r.id_vendor) + ' ' + r.kategori, placeholder: 'Cari barang / vendor...',
         tools: `<button class="btn btn-primary btn-sm" data-act="pesanan-editor" data-id="${esc(id)}">${ic('edit', 14)} Kelola Pesanan</button>`,
-        footer: (rows) => `Total ${rows.length} barang • Riil ${rp(rows.reduce((s, r) => s + r.jumlah * r.harga_vendor_satuan, 0))} • Estimasi ${rp(rows.reduce((s, r) => s + r.jumlah * r.harga_estimasi_satuan, 0))}`,
+        footer: (rows) => `Total ${rows.length} barang • Riil ${rp(rows.reduce((s, r) => s + subRiil(r), 0))} • Estimasi ${rp(rows.reduce((s, r) => s + subEst(r), 0))}`,
         cols: [
           { key: 'nama_barang', label: 'Barang', main: true, render: (r) => `<div class="row" style="gap:12px"><span class="t-ic">${ic(KAT_ICON[r.kategori] || 'box', 18)}</span><div style="min-width:0"><div class="t-main">${esc(r.nama_barang)}</div><div class="t-sub">${esc(r.kategori)}</div></div></div>` },
           { key: 'id_vendor', label: 'Vendor', sortVal: (r) => App.vName(r.id_vendor), render: (r) => `<span class="small">${esc(App.vName(r.id_vendor))}</span>` },
           { key: 'jumlah', label: 'Qty', align: 'c', render: (r) => `<span class="tnum">${fmtQty(r.jumlah)} ${esc(r.satuan)}</span>${r.spek ? `<div class="xs muted">${esc(spekText(r))}</div>` : ''}` },
           { key: 'harga_vendor_satuan', label: 'Harga Vendor', align: 'r', render: (r) => `<span class="tnum">${rp(r.harga_vendor_satuan)}</span><div class="xs muted tnum">est. ${rp(r.harga_estimasi_satuan)}</div>` },
-          { key: 'sub', label: 'Subtotal Riil', align: 'r', sortVal: (r) => r.jumlah * r.harga_vendor_satuan, render: (r) => `<b class="tnum">${rp(r.jumlah * r.harga_vendor_satuan)}</b>` },
+          { key: 'sub', label: 'Subtotal Riil', align: 'r', sortVal: (r) => subRiil(r), render: (r) => `<b class="tnum">${rp(subRiil(r))}</b>${hariText(r) ? `<div class="xs muted">${esc(hariText(r))}</div>` : ''}` },
           { key: 'tanggal_pasang', label: 'Jadwal', render: (r) => `<span class="small">${r.tanggal_pasang ? tgl(r.tanggal_pasang) : '-'} → ${r.tanggal_bongkar ? tgl(r.tanggal_bongkar) : '-'}</span>` },
           { key: 'status_pasang', label: 'Status Pasang', render: (r) => `<select class="select sm" style="width:auto;min-width:120px" data-change="status-pesanan" data-id="${esc(r.id_pesanan)}">${selectOpts(STATUS_PASANG, r.status_pasang)}</select>${r.ditandai_oleh ? `<div class="xs muted">oleh ${esc(r.ditandai_oleh)}</div>` : ''}` }
         ]
@@ -719,7 +719,8 @@ function openPesananEditor(ida) {
     if (t.dataset.f === undefined) return;
     const i = Number(t.dataset.i), f = t.dataset.f, it = PE.items[i];
     const wasLuas = isLuas(it.satuan);
-    it[f] = f.startsWith('harga') ? parseMoney(t.value) : (f === 'jumlah' || f === 'qty_unit') ? num(t.value) : t.value;
+    it[f] = f.startsWith('harga') ? parseMoney(t.value) : (f === 'jumlah' || f === 'qty_unit' || f === 'hari') ? num(t.value) : t.value;
+    if (f === 'hari') it.tarif_hari = ''; // hari berubah → pakai tarif terbaru dari Pengaturan
     PE.dirty = true;
     if (f === 'satuan' && wasLuas !== isLuas(it.satuan)) { peRecalc(it); renderPERows(root); return; }
     if (f === 'spek' || f === 'qty_unit' || f === 'satuan') peSyncRow(root, i);
@@ -763,8 +764,8 @@ function openPesananEditor(ida) {
       const inputs = root.querySelectorAll('[data-f="nama_barang"]'); if (inputs.length) inputs[inputs.length - 1].focus();
     } else if (b.id === 'pe-apply') {
       const dft = peDefaults(root);
-      PE.items.forEach((it) => { if (dft.tanggal_pasang) it.tanggal_pasang = dft.tanggal_pasang; if (dft.tanggal_bongkar) it.tanggal_bongkar = dft.tanggal_bongkar; if (dft.lokasi) it.lokasi = dft.lokasi; });
-      PE.dirty = true; renderPERows(root); toast('Tanggal & lokasi diterapkan ke semua barang.', 'success', 2000);
+      PE.items.forEach((it) => { if (dft.tanggal_pasang) it.tanggal_pasang = dft.tanggal_pasang; if (dft.tanggal_bongkar) it.tanggal_bongkar = dft.tanggal_bongkar; if (dft.lokasi) it.lokasi = dft.lokasi; if (num(it.hari) !== dft.hari) { it.hari = dft.hari; it.tarif_hari = ''; } });
+      PE.dirty = true; renderPERows(root); toast('Tanggal, lokasi & lama sewa diterapkan ke semua barang.', 'success', 2200);
     }
   });
   m.querySelector('#pe-save').addEventListener('click', async (e) => {
@@ -773,6 +774,7 @@ function openPesananEditor(ida) {
       const it = PE.items[i];
       if (!String(it.nama_barang || '').trim()) return toast(`Baris ${i + 1}: nama barang wajib diisi.`, 'warn');
       if (isLuas(it.satuan) && !parseSpek(it.spek) && it.spek) return toast(`Baris ${i + 1} (${it.nama_barang}): spek "${it.spek}" tidak terbaca. Tulis seperti 6x6 atau 4,5x10.`, 'warn', 6000);
+      if (!(num(it.hari) >= 1 || !it.hari)) return toast(`Baris ${i + 1}: lama sewa minimal 1 hari.`, 'warn');
       if (!(num(it.jumlah) > 0)) return toast(`Baris ${i + 1}: jumlah harus lebih dari 0${isLuas(it.satuan) ? ' — isi spek ukuran, mis. 6x6' : ''}.`, 'warn');
       if (it.tanggal_pasang && it.tanggal_bongkar && it.tanggal_bongkar < it.tanggal_pasang) return toast(`Baris ${i + 1}: tanggal bongkar sebelum tanggal pasang.`, 'warn');
     }
@@ -781,7 +783,7 @@ function openPesananEditor(ida) {
       id_pesanan: it.id_pesanan || '', id_vendor: it.id_vendor, id_barang: it.id_barang || '', nama_barang: it.nama_barang, kategori: it.kategori, satuan: it.satuan,
       jumlah: num(it.jumlah), harga_estimasi_satuan: num(it.harga_estimasi_satuan), harga_vendor_satuan: num(it.harga_vendor_satuan),
       tanggal_pasang: it.tanggal_pasang || '', tanggal_bongkar: it.tanggal_bongkar || '', lokasi: it.lokasi || '', catatan: it.catatan || '',
-      spek: it.spek || '', qty_unit: num(it.qty_unit) || 1
+      spek: it.spek || '', qty_unit: num(it.qty_unit) || 1, hari: Math.max(1, Math.round(num(it.hari) || 1))
     }));
     await App.write('savePesananAcara', { id_acara: PE.acara, items }, { btn: e.currentTarget });
   });
@@ -793,7 +795,7 @@ function barangOpts(iv) {
 }
 function peDefaults(root) {
   const g = (id) => (root.querySelector(id) || {}).value || '';
-  return { tanggal_pasang: g('#pe-tp'), tanggal_bongkar: g('#pe-tb'), lokasi: g('#pe-lok') };
+  return { tanggal_pasang: g('#pe-tp'), tanggal_bongkar: g('#pe-tb'), lokasi: g('#pe-lok'), hari: Math.max(1, Math.round(num(g('#pe-hari')) || 1)), tarif_hari: '' };
 }
 function renderPE(root) {
   const a = App.maps.acara[PE.acara];
@@ -811,11 +813,12 @@ function renderPE(root) {
       <div class="field"><label>Tgl pasang (bawaan)</label><input class="input sm" type="date" id="pe-tp" value="${tp}"></div>
       <div class="field"><label>Tgl bongkar (bawaan)</label><input class="input sm" type="date" id="pe-tb" value="${tb}"></div>
       <div class="field"><label>Lokasi (bawaan)</label><input class="input sm" id="pe-lok" value="${esc(a ? a.lokasi : '')}"></div>
+      <div class="field"><label>Lama sewa (hari)</label><input class="input sm tnum" type="number" min="1" step="1" id="pe-hari" value="${a ? Math.max(1, diffDays(a.tanggal_mulai, a.tanggal_selesai || a.tanggal_mulai) + 1) : 1}"></div>
       <button class="btn btn-soft btn-sm" id="pe-apply" type="button">${ic('layers', 14)} Terapkan ke semua</button>
     </div>
     <div class="pe-scroll"><div>
-      <div class="callout info" style="margin-top:12px;padding:9px 12px;font-size:12.5px">${ic('info', 16)}<div>Untuk barang bersatuan <b>m²</b> (mis. tenda per meter), tulis <b>Spek</b> ukurannya seperti <span class="mono">6x6</span> dan jumlah unitnya — <b>Jumlah m²</b> dihitung otomatis (2 unit × 6×6 = 72 m²).</div></div>
-      <div class="pe-head"><span>Barang</span><span>Spek / Ukuran</span><span>Jumlah</span><span>Harga estimasi</span><span>Harga vendor</span><span>Tgl pasang</span><span>Tgl bongkar</span><span>Lokasi</span><span class="right">Subtotal riil</span><span></span></div>
+      <div class="callout info" style="margin-top:12px;padding:9px 12px;font-size:12.5px">${ic('info', 16)}<div>Untuk barang bersatuan <b>m²</b> (mis. tenda per meter), tulis <b>Spek</b> ukurannya seperti <span class="mono">6x6</span> dan jumlah unitnya — <b>Jumlah m²</b> dihitung otomatis (2 unit × 6×6 = 72 m²). <b>Hari</b> = lama sewa: hari ke-1 100%, hari ke-2 dst ${fmtQty(num(D().settings.tarif_hari_tambahan ?? 0.3) * 100)}% per hari.</div></div>
+      <div class="pe-head"><span>Barang</span><span>Spek / Ukuran</span><span>Jumlah</span><span>Hari</span><span>Harga estimasi</span><span>Harga vendor</span><span>Tgl pasang</span><span>Tgl bongkar</span><span>Lokasi</span><span class="right">Subtotal riil</span><span></span></div>
       <div id="pe-rows"></div>
     </div></div>
     <div class="pe-total" id="pe-tot"></div>`}`;
@@ -834,15 +837,21 @@ function renderPERows(root) {
       <div><span class="ml">Jumlah</span><div class="row" style="gap:4px"><input class="input sm tnum" type="number" min="0" step="any" data-f="jumlah" data-i="${i}" value="${num(it.jumlah)}" style="flex:1;min-width:0" ${isLuas(it.satuan) && parseSpek(it.spek) ? 'readonly title="Dihitung otomatis dari spek"' : ''}></div>
         <select class="select sm" data-f="satuan" data-i="${i}" style="margin-top:4px">${satuanOpts(it.satuan)}</select>
         <div class="xs" id="pe-calc-${i}" style="margin-top:3px">${peCalcText(it)}</div></div>
+      <div><span class="ml">Lama sewa (hari)</span><input class="input sm tnum" type="number" min="1" step="1" data-f="hari" data-i="${i}" value="${Math.max(1, Math.round(num(it.hari) || 1))}"><div class="xs muted" id="pe-hf-${i}" style="margin-top:3px">${peHariText(it)}</div></div>
       <div><span class="ml">Harga estimasi</span><input class="input sm tnum money" inputmode="numeric" data-f="harga_estimasi_satuan" data-i="${i}" value="${fmtNum(it.harga_estimasi_satuan)}"></div>
       <div><span class="ml">Harga vendor</span><input class="input sm tnum money" inputmode="numeric" data-f="harga_vendor_satuan" data-i="${i}" value="${fmtNum(it.harga_vendor_satuan)}"></div>
       <div><span class="ml">Tgl pasang</span><input class="input sm" type="date" data-f="tanggal_pasang" data-i="${i}" value="${esc(it.tanggal_pasang)}"></div>
       <div><span class="ml">Tgl bongkar</span><input class="input sm" type="date" data-f="tanggal_bongkar" data-i="${i}" value="${esc(it.tanggal_bongkar)}"></div>
       <div><span class="ml">Lokasi</span><input class="input sm" data-f="lokasi" data-i="${i}" value="${esc(it.lokasi)}"></div>
-      <div class="pe-sub right"><span class="ml">Subtotal riil</span><b class="tnum" id="pe-sub-${i}">${rp(num(it.jumlah) * num(it.harga_vendor_satuan))}</b><div class="xs muted tnum" id="pe-sube-${i}">est. ${rp(num(it.jumlah) * num(it.harga_estimasi_satuan))}</div></div>
+      <div class="pe-sub right"><span class="ml">Subtotal riil</span><b class="tnum" id="pe-sub-${i}">${rp(subRiil(it, peTarif()))}</b><div class="xs muted tnum" id="pe-sube-${i}">est. ${rp(subEst(it, peTarif()))}</div></div>
       <div class="pe-del"><button class="btn btn-ghost btn-icon btn-sm tx-bad" data-del="${i}" type="button" aria-label="Hapus baris">${ic('trash', 16)}</button></div>
     </div>`).join('') : `<div style="padding:8px 0">${emptyState('Belum ada barang', 'Pilih vendor & barang dari katalog lalu klik Tambah.', 'box')}</div>`;
   updatePETotals(root);
+}
+function peTarif() { return D().settings.tarif_hari_tambahan ?? 0.3; }
+function peHariText(it) {
+  const h = Math.max(1, Math.round(num(it.hari) || 1));
+  return h > 1 ? 'harga ×' + fmtQty(faktorHari(it, peTarif())) : 'harga ×1';
 }
 function peRecalc(it) {
   const d = parseSpek(it.spek);
@@ -865,7 +874,8 @@ function peSyncRow(root, i) {
 function updatePETotals(root) {
   let est = 0, riil = 0;
   PE.items.forEach((it, i) => {
-    const r = num(it.jumlah) * num(it.harga_vendor_satuan), e = num(it.jumlah) * num(it.harga_estimasi_satuan);
+    const r = subRiil(it, peTarif()), e = subEst(it, peTarif());
+    const hf = root.querySelector('#pe-hf-' + i); if (hf) hf.textContent = peHariText(it);
     riil += r; est += e;
     const a = root.querySelector('#pe-sub-' + i), b = root.querySelector('#pe-sube-' + i);
     if (a) a.textContent = rp(r);
@@ -889,8 +899,8 @@ AdminViews.pesanan = {
     if (f.acara) rows = rows.filter((p) => p.id_acara === f.acara);
     if (f.vendor) rows = rows.filter((p) => p.id_vendor === f.vendor);
     if (f.status) rows = rows.filter((p) => p.status_pasang === f.status);
-    const riil = rows.reduce((s, p) => s + p.jumlah * p.harga_vendor_satuan, 0);
-    const est = rows.reduce((s, p) => s + p.jumlah * p.harga_estimasi_satuan, 0);
+    const riil = rows.reduce((s, p) => s + subRiil(p), 0);
+    const est = rows.reduce((s, p) => s + subEst(p), 0);
     const terpasang = rows.filter((p) => ['Terpasang', 'Dibongkar'].includes(p.status_pasang)).length;
     return `
     <div class="page-head"><div><span class="eyebrow">${ic('box', 13)} Logistik</span><h1>Pesanan Barang</h1><p>Seluruh barang sewa lintas acara beserta jadwal pasang/bongkar dan status pemasangan di lapangan.</p></div>
@@ -914,7 +924,7 @@ AdminViews.pesanan = {
           { key: 'id_vendor', label: 'Vendor', sortVal: (r) => App.vName(r.id_vendor), render: (r) => `<span class="small">${esc(App.vName(r.id_vendor))}</span>` },
           { key: 'jumlah', label: 'Qty', align: 'c', render: (r) => `<span class="tnum">${fmtQty(r.jumlah)} ${esc(r.satuan)}</span>${r.spek ? `<div class="xs muted">${esc(spekText(r))}</div>` : ''}` },
           { key: 'harga_vendor_satuan', label: 'Harga Vendor', align: 'r', render: (r) => `<span class="tnum">${rp(r.harga_vendor_satuan)}</span>` },
-          { key: 'sub', label: 'Subtotal', align: 'r', sortVal: (r) => r.jumlah * r.harga_vendor_satuan, render: (r) => `<b class="tnum">${rp(r.jumlah * r.harga_vendor_satuan)}</b>` },
+          { key: 'sub', label: 'Subtotal', align: 'r', sortVal: (r) => subRiil(r), render: (r) => `<b class="tnum">${rp(subRiil(r))}</b>${hariText(r) ? `<div class="xs muted">${esc(hariText(r))}</div>` : ''}` },
           { key: 'tanggal_pasang', label: 'Pasang', render: (r) => `<span class="small">${tgl(r.tanggal_pasang)}</span>` },
           { key: 'tanggal_bongkar', label: 'Bongkar', render: (r) => `<span class="small">${tgl(r.tanggal_bongkar)}</span>` },
           { key: 'status_pasang', label: 'Status', render: (r) => `<select class="select sm" style="width:auto;min-width:118px" data-change="status-pesanan" data-id="${esc(r.id_pesanan)}">${selectOpts(STATUS_PASANG, r.status_pasang)}</select>` }
@@ -1621,6 +1631,7 @@ AdminViews.pengaturan = {
       <div class="card" style="--i:0"><div class="card-head"><div><h3><span class="card-title-ic red">${ic('bell', 18)}</span>Pengingat & Sesi</h3></div></div>
         <div class="form-grid">${f('ambang_hari', 'Jatuh tempo (hari setelah acara selesai)', 'number', 'Tagihan/setoran yang belum lunas melewati jatuh tempo diberi penanda merah "Perlu ditagih".')}
         ${f('sesi_jam', 'Lama sesi login (jam)', 'number', 'Maksimal 6 jam. Sesi diperpanjang otomatis selama aktif.')}
+        <div class="field full"><label>Tarif sewa hari ke-2 dst (per hari)</label><div class="input-group"><input class="input" type="number" min="0" max="100" step="1" name="tarif_hari_pct" value="${Math.round(num(st.tarif_hari_tambahan ?? 0.3) * 100)}" style="padding-right:40px"><span class="pre" style="left:auto;right:14px">%</span></div><span class="hint">Hari ke-1 = 100% harga. Contoh 30%: sewa 3 hari = 1 + 0,3 + 0,3 = ×1,6. Berlaku untuk pesanan yang disimpan setelah ini.</span></div>
         <div class="field full"><label>No. WhatsApp Admin (untuk tombol vendor)</label><input class="input" name="kontak_admin_wa" value="${esc(st.kontak_admin_wa)}" inputmode="tel" placeholder="08xxxxxxxxxx"></div></div></div>
       <div class="card" style="--i:1"><div class="card-head"><div><h3><span class="card-title-ic">${ic('utensils', 18)}</span>Aturan Rekomendasi Konsumsi</h3><p>Tingkat diambil dari yang lebih berat antara durasi dan kesulitan.</p></div></div>
         <div class="form-grid">${f('batas_jam_ringan', 'Ringan bila durasi < (jam)', 'number')}${f('batas_jam_berat', 'Berat bila durasi > (jam)', 'number')}
@@ -1652,6 +1663,8 @@ AdminViews.pengaturan = {
 ACT['save-settings'] = (el) => {
   const data = Object.fromEntries(new FormData(document.getElementById('f-set')));
   ['ambang_hari', 'sesi_jam', 'batas_jam_ringan', 'batas_jam_berat'].forEach((k) => (data[k] = num(data[k])));
+  if (data.tarif_hari_pct !== undefined) { data.tarif_hari_tambahan = num(data.tarif_hari_pct) / 100; delete data.tarif_hari_pct; }
+  if (!(data.tarif_hari_tambahan >= 0 && data.tarif_hari_tambahan <= 1)) return toast('Tarif hari tambahan harus 0–100%.', 'warn');
   if (!(data.ambang_hari >= 1)) return toast('Ambang hari minimal 1.', 'warn');
   App.write('saveSettings', data, { btn: el });
 };

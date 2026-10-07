@@ -2,7 +2,8 @@
  *  APP.JS — inti aplikasi: login, sesi, router, kerangka tampilan
  * ===================================================================== */
 
-const MIN_BACKEND = '1.3.0'; // versi Kode.gs minimal untuk frontend ini
+const FRONTEND_VERSION = '1.4.0'; // harus sama dengan <meta name="app-version"> di index.html
+const MIN_BACKEND = '1.4.0'; // versi Kode.gs minimal untuk frontend ini
 
 const ADMIN_NAV = [
   { r: 'beranda', label: 'Beranda & Pengingat', short: 'Beranda', icon: 'home', badge: () => App.reminderCount() },
@@ -36,11 +37,13 @@ const App = {
     window.addEventListener('hashchange', () => this.onRoute());
     document.addEventListener('click', (e) => this.onClick(e));
     document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') this.checkUpdate();
       if (document.visibilityState === 'visible' && this.data && Date.now() - this.lastSync > window.APP_CONFIG.AUTO_REFRESH_MIN * 60000) this.refresh(true);
     });
     window.addEventListener('online', () => { this.updateSync(); if (this.data) this.refresh(true); });
     window.addEventListener('offline', () => this.updateSync());
 
+    this.checkUpdate();
     const token = Store.token;
     const cache = Store.loadCache();
     if (token && cache && cache.data) {
@@ -55,6 +58,21 @@ const App = {
     } else {
       this.renderLogin();
     }
+  },
+  /* Deteksi versi baru di GitHub Pages → muat ulang tanpa cache browser */
+  async checkUpdate() {
+    if (location.protocol === 'file:' || Date.now() - (this._lastUpd || 0) < 60000) return;
+    this._lastUpd = Date.now();
+    try {
+      const html = await (await fetch(location.pathname + '?_=' + Date.now(), { cache: 'no-store' })).text();
+      const m = html.match(/<meta name="app-version" content="([^"]+)"/);
+      if (m && m[1] !== FRONTEND_VERSION) {
+        const key = 'emg3_reload_' + m[1];
+        if (sessionStorage.getItem(key)) return; // cegah putaran muat ulang
+        sessionStorage.setItem(key, '1');
+        location.replace(location.pathname + '?v=' + encodeURIComponent(m[1]) + location.hash);
+      }
+    } catch (e) { /* offline: abaikan */ }
   },
   hideSplash() {
     const s = document.getElementById('splash');

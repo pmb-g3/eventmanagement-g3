@@ -98,6 +98,15 @@ function parseSpek(spek) {
   const m = String(spek || '').replace(/,/g, '.').match(/(\d+(?:\.\d+)?)\s*(?:m(?:eter)?)?\s*[x×X*]\s*(\d+(?:\.\d+)?)/);
   return m ? { p: parseFloat(m[1]), l: parseFloat(m[2]) } : null;
 }
+/* Lama sewa: hari ke-1 = 100%, hari ke-2 dst = tarif (bawaan 30%) per hari */
+function faktorHari(p, tarifDefault) {
+  const h = Math.max(1, Math.round(num(p.hari) || 1));
+  const t = p.tarif_hari === '' || p.tarif_hari === undefined || p.tarif_hari === null ? num(tarifDefault) : num(p.tarif_hari);
+  return h > 1 ? 1 + t * (h - 1) : 1;
+}
+function subRiil(p, t) { return num(p.jumlah) * num(p.harga_vendor_satuan) * faktorHari(p, t); }
+function subEst(p, t) { return num(p.jumlah) * num(p.harga_estimasi_satuan) * faktorHari(p, t); }
+function hariText(p) { const h = Math.max(1, Math.round(num(p.hari) || 1)); return h > 1 ? h + ' hari (×' + fmtQty(faktorHari(p)) + ')' : ''; }
 function spekText(it) {
   if (!it.spek) return '';
   return it.spek + (isLuas(it.satuan) ? ' × ' + (num(it.qty_unit) || 1) + ' unit' : '');

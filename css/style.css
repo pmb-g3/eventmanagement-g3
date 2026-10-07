@@ -460,7 +460,7 @@ img { max-width: 100%; }
 /* ---------- Editor pesanan ---------- */
 .pe-bar { display: grid; grid-template-columns: 1.1fr 1.6fr auto auto; gap: 10px; align-items: end; background: var(--card-2); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 14px; }
 .pe-defaults { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; gap: 10px; align-items: end; margin-top: 10px; }
-.pe-head, .pe-row { display: grid; grid-template-columns: minmax(160px, 2fr) 120px 104px 112px 112px 122px 122px minmax(90px, 1fr) 112px 36px; gap: 8px; align-items: start; }
+.pe-head, .pe-row { display: grid; grid-template-columns: minmax(150px, 2fr) 110px 96px 70px 104px 104px 116px 116px minmax(80px, 1fr) 104px 34px; gap: 8px; align-items: start; }
 .pe-head { align-items: center; }
 .pe-head { font-family: var(--font-head); font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-3); padding: 10px 12px; background: var(--th-bg); border-radius: 10px; margin-top: 14px; }
 .pe-row { padding: 10px 12px; border-bottom: 1px solid var(--border); animation: fadeUp .3s var(--ease) both; }
@@ -468,7 +468,8 @@ img { max-width: 100%; }
 .pe-name .n { font-weight: 600; font-size: 13px; line-height: 1.3; }
 .pe-name .v { font-size: 11.5px; color: var(--text-3); }
 .pe-scroll { overflow-x: auto; }
-.pe-scroll > div { min-width: 1160px; }
+.pe-scroll > div { min-width: 1150px; }
+.pe-defaults { grid-template-columns: repeat(3, minmax(0, 1fr)) 120px auto; }
 .pe-total { display: flex; gap: 24px; justify-content: flex-end; flex-wrap: wrap; padding: 14px 4px 0; }
 .pe-total div { text-align: right; }
 .pe-total .l { font-size: 11px; color: var(--text-3); font-weight: 600; }
