@@ -384,6 +384,9 @@ img { max-width: 100%; }
 .dt .t-sub { font-size: 12px; color: var(--text-3); margin-top: 2px; display: flex; align-items: center; gap: 4px; }
 .dt .t-ic { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--th-bg); color: var(--primary-text); flex-shrink: 0; }
 .dt .acts { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: nowrap; }
+.bulk-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 8px 6px 12px; border-radius: 12px; background: var(--card-2); border: 1px dashed var(--border-2); margin-left: auto; }
+.bulk-cb { width: 18px; height: 18px; accent-color: var(--primary); cursor: pointer; vertical-align: middle; }
+.dt tbody tr.sel { background: color-mix(in srgb, var(--mint-soft) 45%, transparent); }
 .dt-empty { padding: 36px 16px; text-align: center; color: var(--text-3); }
 .dt-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 12px 4px 0; font-size: 12.5px; color: var(--text-3); flex-wrap: wrap; }
 .pager { display: flex; gap: 4px; }
@@ -659,6 +662,8 @@ img { max-width: 100%; }
   .dt td.td-acts .acts { flex-wrap: wrap; justify-content: flex-end; }
   .dt-tools .search { max-width: none; flex-basis: 100%; }
   .dt-tools .select { flex: 1; min-width: 130px; }
+  .bulk-bar { margin-left: 0; width: 100%; }
+  .bulk-bar .select { flex: 1; }
 
   /* Editor pesanan → kartu */
   .pe-bar, .pe-defaults { grid-template-columns: 1fr 1fr; }

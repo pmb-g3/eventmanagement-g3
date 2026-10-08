@@ -507,12 +507,15 @@ const AcaraDetail = {
     const d = D(), t = AdminState.detailTab, amb = ambang();
     if (t === 'barang') {
       const items = d.pesanan.filter((p) => p.id_acara === id);
+      if (BULK.acara !== id) { BULK.acara = id; BULK.sel = new Set(); }
+      [...BULK.sel].forEach((x) => { if (!items.some((p) => p.id_pesanan === x)) BULK.sel.delete(x); });
       return DT.render('det-barang', {
         rows: items, pageSize: 15, empty: `${emptyState('Belum ada barang dipesan', 'Klik "Kelola Pesanan" untuk menambahkan barang dari katalog vendor.', 'box')}`,
         search: (r) => r.nama_barang + ' ' + App.vName(r.id_vendor) + ' ' + r.kategori, placeholder: 'Cari barang / vendor...',
-        tools: `<button class="btn btn-primary btn-sm" data-act="pesanan-editor" data-id="${esc(id)}">${ic('edit', 14)} Kelola Pesanan</button>`,
+        tools: `<button class="btn btn-primary btn-sm" data-act="pesanan-editor" data-id="${esc(id)}">${ic('edit', 14)} Kelola Pesanan</button>${items.length ? bulkBar() : ''}`,
         footer: (rows) => `Total ${rows.length} barang • Riil ${rp(rows.reduce((s, r) => s + subRiil(r), 0))} • Estimasi ${rp(rows.reduce((s, r) => s + subEst(r), 0))}`,
         cols: [
+          { key: '', label: `<input type="checkbox" class="bulk-cb" data-sel-all title="Pilih semua" aria-label="Pilih semua">`, mLabel: 'Pilih', sort: false, width: '38px', render: (r) => `<input type="checkbox" class="bulk-cb" data-sel="${esc(r.id_pesanan)}" ${BULK.sel.has(r.id_pesanan) ? 'checked' : ''} aria-label="Pilih ${esc(r.nama_barang)}">` },
           { key: 'nama_barang', label: 'Barang', main: true, render: (r) => `<div class="row" style="gap:12px"><span class="t-ic">${ic(KAT_ICON[r.kategori] || 'box', 18)}</span><div style="min-width:0"><div class="t-main">${esc(r.nama_barang)}</div><div class="t-sub">${esc(r.kategori)}</div></div></div>` },
           { key: 'id_vendor', label: 'Vendor', sortVal: (r) => App.vName(r.id_vendor), render: (r) => `<span class="small">${esc(App.vName(r.id_vendor))}</span>` },
           { key: 'jumlah', label: 'Qty', align: 'c', render: (r) => `<span class="tnum">${fmtQty(r.jumlah)} ${esc(r.satuan)}</span>${r.spek ? `<div class="xs muted">${esc(spekText(r))}</div>` : ''}` },
@@ -582,6 +585,59 @@ const AcaraDetail = {
   },
   after() { }
 };
+/* ---------- Ubah status pasang serentak ---------- */
+const BULK = { acara: '', sel: new Set() };
+function bulkBar() {
+  const n = BULK.sel.size;
+  return `<div class="bulk-bar" id="bulk-bar">
+    <span class="small bold" id="bulk-info">${n ? n + ' barang dipilih' : 'Ubah status serentak:'}</span>
+    <select class="select sm" id="bulk-st" style="width:auto">${selectOpts(STATUS_PASANG, 'Terpasang')}</select>
+    <button class="btn btn-mint btn-sm" type="button" data-act="bulk-apply">${ic('checkCircle', 14)} <span id="bulk-lbl">${n ? 'Terapkan ke ' + n + ' terpilih' : 'Terapkan ke semua'}</span></button>
+    ${n ? `<button class="btn btn-ghost btn-sm" type="button" data-act="bulk-clear">${ic('x', 14)} Batal pilih</button>` : ''}
+  </div>`;
+}
+function bulkVisibleIds() {
+  const cfg = DT.reg['det-barang'], st = DT.state['det-barang'];
+  if (!cfg) return [];
+  const q = (st && st.q || '').toLowerCase();
+  return cfg.rows.filter((r) => !q || cfg.search(r).toLowerCase().includes(q)).map((r) => r.id_pesanan);
+}
+function bulkSync() {
+  const n = BULK.sel.size;
+  const info = document.getElementById('bulk-info'), lbl = document.getElementById('bulk-lbl');
+  if (info) info.textContent = n ? n + ' barang dipilih' : 'Ubah status serentak:';
+  if (lbl) lbl.textContent = n ? 'Terapkan ke ' + n + ' terpilih' : 'Terapkan ke semua';
+  const all = document.querySelector('[data-sel-all]');
+  if (all) { const vis = bulkVisibleIds(); all.checked = vis.length > 0 && vis.every((x) => BULK.sel.has(x)); all.indeterminate = !all.checked && vis.some((x) => BULK.sel.has(x)); }
+  document.querySelectorAll('[data-sel]').forEach((c) => c.closest('tr') && c.closest('tr').classList.toggle('sel', c.checked));
+  if (!!n !== !!document.querySelector('[data-act="bulk-clear"]')) { const bar = document.getElementById('bulk-bar'); if (bar) { const st = bar.querySelector('#bulk-st').value; bar.outerHTML = bulkBar(); document.getElementById('bulk-st').value = st; } }
+}
+document.addEventListener('change', (e) => {
+  const t = e.target;
+  if (t.matches('[data-sel]')) { t.checked ? BULK.sel.add(t.dataset.sel) : BULK.sel.delete(t.dataset.sel); bulkSync(); }
+  else if (t.matches('[data-sel-all]')) {
+    bulkVisibleIds().forEach((x) => (t.checked ? BULK.sel.add(x) : BULK.sel.delete(x)));
+    document.querySelectorAll('[data-sel]').forEach((c) => (c.checked = BULK.sel.has(c.dataset.sel)));
+    bulkSync();
+  }
+});
+ACT['bulk-clear'] = () => { BULK.sel.clear(); document.querySelectorAll('[data-sel]').forEach((c) => (c.checked = false)); bulkSync(); };
+ACT['bulk-apply'] = async (el) => {
+  const status = document.getElementById('bulk-st').value;
+  let ids = [...BULK.sel];
+  if (!ids.length) {
+    ids = bulkVisibleIds();
+    if (!ids.length) return;
+    if (!await confirmDialog({ title: 'Ubah semua barang?', message: `Status pemasangan <b>${ids.length} barang</b>${DT.state['det-barang'] && DT.state['det-barang'].q ? ' (hasil pencarian)' : ''} akan diubah menjadi <b>${esc(status)}</b>.`, okText: 'Ya, ubah semua' })) return;
+  }
+  const items = D().pesanan.filter((p) => ids.includes(p.id_pesanan));
+  const old = items.map((p) => [p, p.status_pasang]);
+  items.forEach((p) => (p.status_pasang = status)); // tampil seketika
+  const res = await App.write('setStatusPasang', { ids, status }, { btn: el, close: false, toast: false, busyText: 'Menyimpan ' + ids.length + ' barang...' });
+  if (res.success) { BULK.sel.clear(); App.renderView(false); toast(ids.length + ' barang → ' + status, 'success', 2500); }
+  else { old.forEach(([p, s0]) => (p.status_pasang = s0)); App.renderView(false); }
+};
+
 ACT.dtab = (el) => {
   AdminState.detailTab = el.dataset.tab;
   document.querySelectorAll('[data-act="dtab"]').forEach((b) => b.classList.toggle('active', b === el));
