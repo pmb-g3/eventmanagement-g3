@@ -112,7 +112,7 @@ Jika tampilan belum berubah, tekan **Ctrl+Shift+R**.
 
 ---
 
-## E. FITUR TAMBAHAN (versi 1.1 – 1.4)
+## E. FITUR TAMBAHAN (versi 1.1 – 1.5)
 
 ### E1. Import katalog dari Excel
 1. Buka **Katalog Barang**, lalu klik **Import Excel** → **Template Excel**.
@@ -148,7 +148,41 @@ Jika tampilan belum berubah, tekan **Ctrl+Shift+R**.
   - Persentasenya bisa diganti di **Pengaturan → Tarif sewa hari ke-2 dst**. Pesanan lama tetap memakai tarif saat disimpan, kecuali jumlah harinya diubah.
 - **Pembaruan otomatis** (v1.4): jika ada versi baru di GitHub Pages, aplikasi otomatis memuat ulang ke versi terbaru. Tidak perlu lagi menghapus cache.
 
-### E5. Cara memperbarui aplikasi yang sudah terpasang
+### E5. Urutan & warna acara, pencarian barang, potongan harga (v1.5)
+**Urutan Daftar Acara**
+1. Paling atas: acara yang **sedang berjalan atau diproses** dan belum beres (vendor atau setoran belum lunas).
+2. Berikutnya: acara lain yang belum beres, dari yang terbaru.
+3. Paling bawah: acara yang **sudah lunas dan bebas tanggungan**. Acara yang paling lama berada di urutan terakhir.
+
+**Warna kartu menunjukkan status setoran panitia**
+
+| Warna | Arti |
+|---|---|
+| 🔴 Merah | Panitia **belum setor** sama sekali (ditampilkan beserta kekurangannya) |
+| 🟠 Oranye | Panitia **proses cicil** (sudah setor sebagian) |
+| 🟢 Hijau | Panitia **lunas, bebas tanggungan** |
+| Polos | Acara belum punya pesanan |
+
+Klik label warna di atas daftar (mis. *Belum setor 3*) untuk menyaring. Klik sekali lagi untuk melepas saringan.
+
+**Pencarian barang di Kelola Pesanan**
+- Ketik di kotak **Cari & tambah barang**, misalnya `tenda 6` atau `kursi`.
+- Pilih barang dengan klik, atau gunakan ↑ ↓ lalu **Enter**. **Esc** mengosongkan pencarian.
+- Barang yang sudah ada di pesanan diberi tanda **sudah 1×**. Jika barang yang sama ditambahkan lagi, barang itu tetap masuk sebagai baris baru.
+
+**Potongan harga dari vendor (opsional)** — di form **Catat Pembayaran Vendor**:
+
+| Jenis | Diisi di | Siapa yang tahu |
+|---|---|---|
+| **Potongan acara** | Kolom *Potongan acara* pada baris acara | Tampil di **PDF rekap acara** (Total harga vendor − Potongan = Total biaya riil setelah potongan). Biaya untuk panitia ikut turun. |
+| **Potongan gabungan** | Kotak *Potongan gabungan dari total* (hanya Admin) | **Hanya Admin.** Tidak tampil di PDF panitia; panitia tetap menyetor sesuai biaya acaranya. Selisihnya menjadi dana Admin. |
+
+- Potongan gabungan dibagi otomatis ke acara yang dibayar, sesuai sisa yang belum tertutup uang.
+- Tombol **Lunasi acara paling lama dulu** sudah memperhitungkan potongan. Contoh: tagihan 12.500.000 dengan potongan gabungan 500.000 → nominal uang otomatis 12.000.000 dan semua acara tercatat **LUNAS**.
+- Pembayaran boleh bernilai Rp 0 jika isinya hanya potongan.
+- Potongan tampil di Riwayat Pembayaran, tabel per vendor, detail acara, dan portal vendor. Tanda 🔒 *gab.* berarti potongan gabungan yang hanya terlihat oleh Admin.
+
+### E6. Cara memperbarui aplikasi yang sudah terpasang
 1. **Backend:** buka editor Apps Script, ganti seluruh isi `Kode.gs` dengan versi baru, lalu simpan.
    Setelah itu buka **Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy**.
    Jangan jalankan `setupAppEnvironment` lagi. URL tetap sama.
@@ -156,7 +190,7 @@ Jika tampilan belum berubah, tekan **Ctrl+Shift+R**.
    Setelah itu jalankan:
    ```bash
    git add .
-   git commit -m "Update v1.4"
+   git commit -m "Update v1.5"
    git push
    ```
 

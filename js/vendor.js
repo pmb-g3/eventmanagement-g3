@@ -38,7 +38,7 @@ function vendorCard(e, i) {
       <div class="right" style="flex-shrink:0"><div class="xs muted bold" style="letter-spacing:.05em">NILAI SEWA</div><div class="bold tnum" style="font-family:var(--font-head);font-size:17px">${rp(av.tagihan)}</div>
         ${av.status === 'Lunas' ? badge('LUNAS', 'b-ok') : av.status === 'Sebagian' ? badge('Sebagian', 'b-warn') : av.status === 'Belum' ? badge('Belum dibayar', 'b-bad') : ''}</div>
     </div>
-    <div class="pay-chip"><div><div class="xs muted">Sudah diterima</div><div class="bold tnum tx-ok" style="font-size:16px">${rp(av.dibayar)}</div>${av.sisa > 0 ? `<div class="xs tx-bad">Sisa ${rp(av.sisa)}</div>` : ''}</div>
+    <div class="pay-chip"><div><div class="xs muted">Sudah diterima</div><div class="bold tnum tx-ok" style="font-size:16px">${rp(av.dibayar)}</div>${(av.potongan || 0) + (av.potongan_gab || 0) > 0 ? `<div class="xs muted">+ potongan ${rp((av.potongan || 0) + (av.potongan_gab || 0))}</div>` : ''}${av.sisa > 0 ? `<div class="xs tx-bad">Sisa ${rp(av.sisa)}</div>` : ''}</div>
       <div class="row wrap" style="gap:6px">${bukti.length ? bukti.map((p, k) => `<button class="btn btn-soft btn-sm" data-act="open-file" data-id="${esc(p.id_berkas_bukti)}" data-title="Bukti Transfer ${tgl(p.tanggal_bayar)}">${ic('receipt', 14)} Bukti ${bukti.length > 1 ? k + 1 : 'Transfer'}</button>`).join('') : '<span class="xs muted">Belum ada bukti transfer</span>'}</div></div>
     ${items.length ? `<div>
       <div class="row between" style="margin-bottom:8px"><b style="font-family:var(--font-head);font-size:13.5px">Progres Unit Terpasang</b>${badge(av.terpasang + ' dari ' + items.length + ' terpasang', pct === 100 ? 'b-ok' : 'b-info')}</div>
@@ -63,7 +63,7 @@ const VendorViews = {
       const d = App.data, v = d.vendor[0] || {}, t = d.fin.total;
       const list = vData();
       const aktif = list.filter((e) => e.aktif);
-      const pct = t.tagihan ? Math.round((t.dibayar / t.tagihan) * 100) : 0;
+      const pct = t.tagihan ? Math.min(100, Math.round(((t.dibayar + (t.potongan || 0)) / t.tagihan) * 100)) : 0;
       const soon = d.pesanan.filter((p) => isYMD(p.tanggal_pasang) && p.tanggal_pasang >= App.today && p.tanggal_pasang <= addDays(App.today, 3) && p.status_pasang === 'Belum');
       return `
       <div class="v-hero">
@@ -74,7 +74,7 @@ const VendorViews = {
       </div>
       <div class="card section" style="margin-top:18px">
         <div class="row between"><h3 style="font-size:16px" class="row">${ic('wallet', 18, 'tx-primary')} Hak Tagihan Berjalan</h3>${badge(pct + '% Terbayar', pct === 100 ? 'b-ok' : 'b-info')}</div>
-        <div class="v-stat"><div><div class="l">Total nilai kontrak</div><div class="v">${countEl(t.tagihan)}</div></div><div class="g"><div class="l">Sudah diterima</div><div class="v">${countEl(t.dibayar)}</div></div></div>
+        <div class="v-stat"><div><div class="l">Total nilai kontrak</div><div class="v">${countEl(t.tagihan)}</div></div><div class="g"><div class="l">Sudah diterima</div><div class="v">${countEl(t.dibayar)}</div>${t.potongan > 0 ? `<div class="xs" style="opacity:.8">+ potongan ${rp(t.potongan)}</div>` : ''}</div></div>
         <div class="progress"><span style="width:${pct}%"></span></div>
         <div class="row between" style="margin-top:12px"><span class="muted">Sisa hak tagihan</span><b class="tnum ${t.sisa > 0 ? 'tx-bad' : 'tx-ok'}" style="font-family:var(--font-head);font-size:18px">${countEl(t.sisa)}</b></div>
       </div>
@@ -117,7 +117,7 @@ const VendorViews = {
       return `
       <div class="page-head"><div><span class="eyebrow">${ic('receipt', 13)} Portal Vendor</span><h1>Bukti Pembayaran</h1><p>Riwayat pembayaran dari pondok ke ${esc((d.vendor[0] || {}).nama_vendor || 'Anda')} beserta alokasi per acara.</p></div></div>
       <div class="mini-kpis stagger" style="grid-template-columns:repeat(3,minmax(0,1fr))">
-        <div class="mini-kpi" style="--i:0"><div class="l">Total Diterima</div><div class="v tx-ok">${countEl(t.dibayar)}</div><div class="s">${pays.length} transaksi</div></div>
+        <div class="mini-kpi" style="--i:0"><div class="l">Total Diterima</div><div class="v tx-ok">${countEl(t.dibayar)}</div><div class="s">${pays.length} transaksi${t.potongan > 0 ? ' • potongan ' + rp(t.potongan) : ''}</div></div>
         <div class="mini-kpi" style="--i:1"><div class="l">Total Kontrak</div><div class="v">${countEl(t.tagihan)}</div></div>
         <div class="mini-kpi" style="--i:2"><div class="l tx-bad">Sisa</div><div class="v tx-bad">${countEl(t.sisa)}</div></div>
       </div>
@@ -125,10 +125,10 @@ const VendorViews = {
         ${pays.length ? pays.map((p, i) => {
           const al = d.alokasi.filter((a) => a.id_pembayaran === p.id_pembayaran);
           return `<div class="card pad-sm" style="--i:${Math.min(i, 8)}"><div class="row between wrap" style="gap:12px">
-            <div class="row" style="gap:12px"><span class="li-ic mint">${ic(p.metode === 'Transfer' ? 'send' : 'wallet', 18)}</span><div><div class="bold tnum" style="font-family:var(--font-head);font-size:17px">${rp(p.nominal_total)}</div><div class="small muted">${tglPanjang(p.tanggal_bayar)} • ${esc(p.metode)}</div></div></div>
+            <div class="row" style="gap:12px"><span class="li-ic mint">${ic(p.metode === 'Transfer' ? 'send' : 'wallet', 18)}</span><div><div class="bold tnum" style="font-family:var(--font-head);font-size:17px">${rp(p.nominal_total)}</div><div class="small muted">${tglPanjang(p.tanggal_bayar)} • ${esc(p.metode)}${num(p.diskon_total) > 0 ? ' • potongan gabungan ' + rp(num(p.diskon_total)) : ''}</div></div></div>
             ${p.id_berkas_bukti ? `<button class="btn btn-primary btn-sm" data-act="open-file" data-id="${esc(p.id_berkas_bukti)}" data-title="Bukti Transfer ${tgl(p.tanggal_bayar)}">${ic('eye', 15)} Lihat Bukti Transfer</button>` : `<span class="small muted">${p.metode === 'Tunai' ? 'Pembayaran tunai' : 'Bukti tidak ditampilkan'}</span>`}</div>
             <div class="divider" style="margin:12px 0"></div>
-            <div class="stack" style="gap:6px">${al.map((a) => `<div class="row between small"><span>${ic('calendar', 13)} ${esc(App.acara(a.id_acara).nama_acara)}</span><b class="tnum">${rp(a.nominal)}</b></div>`).join('')}</div></div>`;
+            <div class="stack" style="gap:6px">${al.map((a) => `<div class="row between small"><span>${ic('calendar', 13)} ${esc(App.acara(a.id_acara).nama_acara)}</span><b class="tnum">${rp(a.nominal)}${num(a.diskon) + num(a.diskon_gab) > 0 ? ` <span class="xs muted" style="font-weight:500">+ potongan ${rp(num(a.diskon) + num(a.diskon_gab))}</span>` : ''}</b></div>`).join('')}</div></div>`;
         }).join('') : `<div class="card">${emptyState('Belum ada pembayaran', 'Pembayaran dari pondok akan tercatat di sini.', 'receipt')}</div>`}
       </div>
       ${VendorViews.contactBtn()}`;

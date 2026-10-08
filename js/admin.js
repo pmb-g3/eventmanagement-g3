@@ -159,7 +159,7 @@ AdminViews.beranda = {
     const vendorTertagih = new Set(tag.map((x) => x.id_vendor)).size;
     const lokasi = [...new Set(jad.map((j) => j.lokasi).filter(Boolean))];
     const nama = d.user.nama || 'Ustadz';
-    const pct = t.tagihan ? Math.round((t.dibayar / t.tagihan) * 100) : 0;
+    const pct = t.tagihan ? Math.min(100, Math.round(((t.dibayar + (t.potongan_gab || 0)) / t.tagihan) * 100)) : 0;
     const counts = { vendor: tag.length, setoran: setr.length, talangan: tal.length };
     return `
     <div class="hero">
@@ -361,11 +361,16 @@ AdminViews.acara = {
         d.pesanan.filter((p) => p.id_acara === a.id_acara).map((p) => p.nama_barang + ' ' + App.vName(p.id_vendor)).join(' ')).toLowerCase().includes(q));
     }
     const today = App.today;
+    // Urutan: (0) sedang berjalan & belum lunas → (1) belum lunas lainnya (terbaru dulu) → (2) sudah lunas / bebas tanggungan (paling lama di bawah)
+    const rk = {};
+    list.forEach((a) => { rk[a.id_acara] = acaraRank(a, today); });
     list.sort((a, b) => {
-      const ua = a.tanggal_selesai >= today, ub = b.tanggal_selesai >= today;
-      if (ua !== ub) return ua ? -1 : 1;
-      return ua ? a.tanggal_mulai.localeCompare(b.tanggal_mulai) : b.tanggal_mulai.localeCompare(a.tanggal_mulai);
+      const ra = rk[a.id_acara], rb = rk[b.id_acara];
+      if (ra !== rb) return ra - rb;
+      return ra === 0 ? a.tanggal_mulai.localeCompare(b.tanggal_mulai) : b.tanggal_mulai.localeCompare(a.tanggal_mulai);
     });
+    const stCount = { belum: 0, cicil: 0, lunas: 0 };
+    list.forEach((a) => { const k = setoranState(a); if (stCount[k] !== undefined) stCount[k]++; });
     const sum = list.reduce((s, a) => { const x = App.finA(a.id_acara); s.biaya += x.biaya || 0; s.talangan += x.talangan || 0; s.n += x.jumlah_item || 0; s.t += x.terpasang || 0; if (x.talangan > 0) s.nt++; return s; }, { biaya: 0, talangan: 0, n: 0, t: 0, nt: 0 });
     const filtered = f.q || f.status || f.bayar || f.setoran;
     return `
@@ -391,7 +396,13 @@ AdminViews.acara = {
         ${filtered ? `<button class="btn btn-ghost btn-sm" data-act="af-reset">${ic('x', 14)} Reset</button>` : ''}
       </div>
     </div>
-    <div class="ev-list stagger section" style="margin-top:16px">
+    <div class="st-legend section" style="margin-top:14px">
+      <span class="small muted">Status setoran panitia:</span>
+      <button type="button" class="st-chip st-belum ${f.setoran === 'Belum' ? 'on' : ''}" data-act="st-filter" data-v="Belum"><i></i>Belum setor <b>${stCount.belum}</b></button>
+      <button type="button" class="st-chip st-cicil ${f.setoran === 'Sebagian' ? 'on' : ''}" data-act="st-filter" data-v="Sebagian"><i></i>Proses cicil <b>${stCount.cicil}</b></button>
+      <button type="button" class="st-chip st-lunas ${f.setoran === 'Lunas' ? 'on' : ''}" data-act="st-filter" data-v="Lunas"><i></i>Lunas / bebas tanggungan <b>${stCount.lunas}</b></button>
+    </div>
+    <div class="ev-list stagger section" style="margin-top:12px">
       ${list.length ? list.map((a, i) => this.card(a, i)).join('') : `<div class="card">${emptyState(filtered ? 'Tidak ada acara yang cocok dengan filter' : 'Belum ada acara', filtered ? 'Coba ubah kata kunci atau filter.' : 'Mulai dengan membuat acara pertama.', 'calendar')}${filtered ? '' : `<div class="center"><button class="btn btn-primary" data-act="new-acara">${ic('plus', 16)} Buat Acara</button></div>`}</div>`}
     </div>`;
   },
@@ -399,14 +410,18 @@ AdminViews.acara = {
     const x = App.finA(a.id_acara), today = App.today;
     const dt = parseYMD(a.tanggal_mulai), past = a.tanggal_selesai < today;
     const pct = x.jumlah_item ? Math.round((x.terpasang / x.jumlah_item) * 100) : 0;
-    return `<div class="ev-card ${a.nonaktif ? 'off' : ''}" style="--i:${Math.min(i, 10)}" data-act="open-acara" data-id="${esc(a.id_acara)}">
+    const st = setoranState(a);
+    const stPill = st === 'belum' ? `<span class="st-pill st-belum">${ic('alert', 13)} Panitia belum setor • kurang ${rp(x.kekurangan)}</span>`
+      : st === 'cicil' ? `<span class="st-pill st-cicil">${ic('clock', 13)} Panitia cicil • kurang ${rp(x.kekurangan)}</span>`
+      : st === 'lunas' ? `<span class="st-pill st-lunas">${ic('check', 13)} Panitia lunas • bebas tanggungan</span>` : '';
+    return `<div class="ev-card st-${st} ${a.nonaktif ? 'off' : ''}" style="--i:${Math.min(i, 10)}" data-act="open-acara" data-id="${esc(a.id_acara)}">
       <div class="date-blk ${past ? 'past' : ''}"><div class="m">${BLN[dt.getMonth()]}</div><div class="d">${dt.getDate()}</div></div>
       <div class="ev-body">
         <div class="ev-title">${esc(a.nama_acara)} ${badge(a.status_acara)}${a.nonaktif ? badge('Nonaktif', 'b-neu no-dot') : ''}</div>
         <div class="ev-meta"><span>${ic('calendar', 14)} ${tglRange(a.tanggal_mulai, a.tanggal_selesai)}</span><span>${ic('user', 14)} PJ: ${esc(a.nama_panitia || '-')}</span>${a.lokasi ? `<span>${ic('pin', 14)} ${esc(a.lokasi)}</span>` : ''}</div>
+        ${stPill ? `<div class="st-row">${stPill}</div>` : ''}
         <div class="ev-badges">
-          ${x.biaya ? payBadge(x.status_bayar, 'Vendor') : badge('Belum ada pesanan', 'b-neu')}
-          ${x.biaya ? payBadge(x.status_setoran, 'Setoran') : ''}
+          ${x.biaya || x.tagihan_kotor ? payBadge(x.status_bayar, 'Vendor') : badge('Belum ada pesanan', 'b-neu')}
           ${x.talangan > 0 ? badge('Admin menalangi ' + rpShort(x.talangan), 'b-bad') : ''}
           ${x.jumlah_item ? badge(x.terpasang + '/' + x.jumlah_item + ' terpasang', pct === 100 ? 'b-ok' : 'b-info') : ''}
         </div>
@@ -434,6 +449,31 @@ AdminViews.acara = {
     if (App.route.id) AcaraDetail.after(App.route.id);
   }
 };
+/** Teks potongan kecil: per acara (publik) & gabungan (hanya Admin). */
+function potText(pot, gab) {
+  if (!(pot > 0) && !(gab > 0)) return '';
+  return `<div class="xs pot-note tx-ok">${ic('tag', 11)} ${pot > 0 ? 'potongan ' + rp(pot) : ''}${pot > 0 && gab > 0 ? ' • ' : ''}${gab > 0 ? `<span title="Potongan gabungan — hanya terlihat oleh Admin">${ic('lock', 10)} gab. ${rp(gab)}</span>` : ''}</div>`;
+}
+/** Status setoran panitia untuk pewarnaan kartu: belum | cicil | lunas | none */
+function setoranState(a) {
+  const x = App.finA(a.id_acara);
+  if (a.status_acara === 'Batal' || !(x.biaya > 0)) return x.setoran > 0 ? 'lunas' : 'none';
+  if (x.status_setoran === 'Lunas') return 'lunas';
+  return x.setoran > 0 ? 'cicil' : 'belum';
+}
+/** Peringkat urutan daftar acara. 0 = berjalan & belum beres, 1 = belum beres, 2 = beres. */
+function acaraRank(a, today) {
+  const x = App.finA(a.id_acara);
+  const ada = (x.tagihan_kotor || x.biaya) > 0;
+  const vendorBeres = !ada || x.status_bayar === 'Lunas';
+  const setorBeres = !(x.biaya > 0) || x.status_setoran === 'Lunas';
+  const lewat = a.tanggal_selesai < today;
+  const beres = a.status_acara === 'Batal' || (vendorBeres && setorBeres && (ada || lewat || a.status_acara === 'Selesai'));
+  if (beres) return 2;
+  const berjalan = (a.tanggal_mulai <= today && a.tanggal_selesai >= today) || ['Dipesan', 'Terpasang', 'Dibongkar'].includes(a.status_acara);
+  return berjalan ? 0 : 1;
+}
+ACT['st-filter'] = (el) => { const f = AdminState.acaraFilter; f.setoran = f.setoran === el.dataset.v ? '' : el.dataset.v; App.renderView(false); };
 ACT['af-reset'] = () => { Object.assign(AdminState.acaraFilter, { q: '', status: '', bayar: '', setoran: '', nonaktif: false }); App.renderView(false); };
 ACT['open-acara'] = (el) => { App.go('acara/' + encodeURIComponent(el.dataset.id)); };
 ACT['go-dokumen'] = () => App.go('dokumen');
@@ -490,8 +530,8 @@ const AcaraDetail = {
 
     <div class="mini-kpis stagger section" style="margin-top:18px">
       <div class="mini-kpi" style="--i:0"><div class="l">Estimasi ke Panitia</div><div class="v">${countEl(x.estimasi)}</div><div class="s">Harga estimasi</div></div>
-      <div class="mini-kpi" style="--i:1"><div class="l">Biaya Riil (Vendor)</div><div class="v">${countEl(x.biaya)}</div><div class="s">Selisih estimasi: <b class="${x.selisih < 0 ? 'tx-bad' : 'tx-ok'}">${rp(x.selisih)}</b></div></div>
-      <div class="mini-kpi" style="--i:2"><div class="l">Dibayar ke Vendor</div><div class="v">${countEl(x.dibayar)}</div><div class="s">Sisa: <b class="${x.sisa_vendor > 0 ? 'tx-bad' : ''}">${rp(x.sisa_vendor)}</b> • ${payBadge(x.status_bayar)}</div></div>
+      <div class="mini-kpi" style="--i:1"><div class="l">Biaya Riil (Vendor)</div><div class="v">${countEl(x.biaya)}</div><div class="s">Selisih estimasi: <b class="${x.selisih < 0 ? 'tx-bad' : 'tx-ok'}">${rp(x.selisih)}</b></div>${x.potongan > 0 ? `<div class="xs tx-ok" style="margin-top:3px">${ic('tag', 11)} Sudah dipotong ${rp(x.potongan)} dari ${rp(x.tagihan_kotor)}</div>` : ''}</div>
+      <div class="mini-kpi" style="--i:2"><div class="l">Dibayar ke Vendor</div><div class="v">${countEl(x.dibayar)}</div><div class="s">Sisa: <b class="${x.sisa_vendor > 0 ? 'tx-bad' : ''}">${rp(x.sisa_vendor)}</b> • ${payBadge(x.status_bayar)}</div>${x.potongan_gab > 0 ? `<div class="xs muted" style="margin-top:3px" title="Hanya Admin yang melihat ini">${ic('lock', 10)} + potongan gabungan ${rp(x.potongan_gab)}</div>` : ''}</div>
       <div class="mini-kpi" style="--i:3"><div class="l">Setoran Panitia</div><div class="v">${countEl(x.setoran)}</div><div class="s">Kurang: <b class="${x.kekurangan > 0 ? 'tx-bad' : ''}">${rp(x.kekurangan)}</b> • ${payBadge(x.status_setoran)}</div></div>
     </div>
     ${x.talangan > 0 ? `<div class="callout bad section" style="margin-top:14px">${ic('alert', 18)}<div><b>Admin menalangi ${rp(x.talangan)}.</b> Pembayaran ke vendor (${rp(x.dibayar)}) melebihi setoran panitia (${rp(x.setoran)}). Segera tagih panitia.</div></div>`
@@ -535,7 +575,7 @@ const AcaraDetail = {
           { key: 'terpasang', label: 'Terpasang', align: 'c', render: (r) => `${r.terpasang}/${r.jumlah_item}` },
           { key: 'estimasi', label: 'Estimasi', align: 'r', render: (r) => `<span class="tnum muted">${rp(r.estimasi)}</span>` },
           { key: 'tagihan', label: 'Tagihan Riil', align: 'r', render: (r) => `<b class="tnum">${rp(r.tagihan)}</b>` },
-          { key: 'dibayar', label: 'Dibayar', align: 'r', render: (r) => `<span class="tnum">${rp(r.dibayar)}</span>` },
+          { key: 'dibayar', label: 'Dibayar', align: 'r', render: (r) => `<span class="tnum">${rp(r.dibayar)}</span>${potText(r.potongan, r.potongan_gab)}` },
           { key: 'sisa', label: 'Sisa', align: 'r', render: (r) => `<b class="tnum ${r.sisa > 0 ? 'tx-bad' : ''}">${rp(Math.max(0, r.sisa))}</b>` },
           { key: 'status', label: 'Status', render: (r) => payBadge(r.status) + (r.sisa > 0 ? ' ' + agingPill(r.umur, amb) : '') },
           { key: '', label: '', acts: true, sort: false, render: (r) => r.sisa > 0 ? `<div class="acts"><button class="btn btn-primary btn-sm" data-act="new-bayar" data-vendor="${r.id_vendor}" data-acara="${esc(id)}">${ic('wallet', 14)} Bayar</button></div>` : '' }
@@ -558,14 +598,14 @@ const AcaraDetail = {
         </div>`).join('')}</div>` : emptyState('Belum ada jadwal konsumsi', 'Tambahkan agar pengingat H-1 & Hari H muncul di Beranda.', 'utensils'));
     }
     if (t === 'bayar') {
-      const rows = d.alokasi.filter((al) => al.id_acara === id).map((al) => Object.assign({}, App.maps.pembayaran[al.id_pembayaran] || {}, { porsi: al.nominal }));
+      const rows = d.alokasi.filter((al) => al.id_acara === id).map((al) => Object.assign({}, App.maps.pembayaran[al.id_pembayaran] || {}, { porsi: al.nominal, pot: num(al.diskon), gab: num(al.diskon_gab) }));
       return DT.render('det-bayar', {
         rows, empty: emptyState('Belum ada pembayaran ke vendor untuk acara ini', '', 'wallet'), sort: 'tanggal_bayar', dir: 'desc',
         tools: `<button class="btn btn-primary btn-sm" data-act="new-bayar" data-acara="${esc(id)}">${ic('plus', 14)} Catat Pembayaran</button>`,
         cols: [
           { key: 'tanggal_bayar', label: 'Tanggal', main: true, render: (r) => `<div class="t-main">${tgl(r.tanggal_bayar)}</div><div class="t-sub">${esc(App.vName(r.id_vendor))}</div>` },
           { key: 'metode', label: 'Metode', render: (r) => badge(r.metode) },
-          { key: 'porsi', label: 'Porsi Acara Ini', align: 'r', render: (r) => `<b class="tnum">${rp(r.porsi)}</b>${r.nominal_total !== r.porsi ? `<div class="xs muted">dari total ${rp(r.nominal_total)}</div>` : ''}` },
+          { key: 'porsi', label: 'Porsi Acara Ini', align: 'r', render: (r) => `<b class="tnum">${rp(r.porsi)}</b>${r.nominal_total !== r.porsi ? `<div class="xs muted">dari total ${rp(r.nominal_total)}</div>` : ''}${potText(r.pot, r.gab)}` },
           { key: 'bukti', label: 'Bukti & Nota', sort: false, render: (r) => `<div class="row" style="justify-content:inherit;gap:6px">${fileLink(r.id_berkas_bukti, 'Bukti', 'Bukti Transfer')}${fileLink(r.id_berkas_nota, 'Nota', 'Nota Vendor')}</div>` },
           { key: 'nota_diteruskan', label: 'Nota ke Panitia', render: (r) => r.nota_diteruskan ? badge('Diteruskan ' + tgl(r.tanggal_nota_diteruskan), 'b-ok') : badge('Belum', 'b-warn') },
           { key: '', label: '', acts: true, sort: false, render: (r) => `<div class="acts"><button class="btn btn-ghost btn-sm" data-act="edit-bayar" data-id="${r.id_pembayaran}">${ic('edit', 14)}</button></div>` }
@@ -772,6 +812,7 @@ function openPesananEditor(ida) {
   renderPE(root);
   root.addEventListener('input', (e) => {
     const t = e.target;
+    if (t.id === 'pe-q') { PES.q = t.value; PES.hi = 0; peSearchRender(root, true); return; }
     if (t.dataset.f === undefined) return;
     const i = Number(t.dataset.i), f = t.dataset.f, it = PE.items[i];
     const wasLuas = isLuas(it.satuan);
@@ -789,30 +830,27 @@ function openPesananEditor(ida) {
       PE.acara = t.value; loadPE(); renderPE(root);
     } else if (t.id === 'pe-v') {
       PE.vendor = t.value;
-      root.querySelector('#pe-b').innerHTML = barangOpts(PE.vendor);
+      PES.hi = 0; peSearchRender(root, document.activeElement === root.querySelector('#pe-q'));
     }
   });
+  root.addEventListener('focusin', (e) => { if (e.target.id === 'pe-q') peSearchRender(root, true); });
+  root.addEventListener('keydown', (e) => {
+    if (e.target.id !== 'pe-q') return;
+    const res = peSearchResults();
+    if (e.key === 'ArrowDown') { e.preventDefault(); PES.hi = Math.min(res.length - 1, PES.hi + 1); peSearchRender(root, true); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); PES.hi = Math.max(0, PES.hi - 1); peSearchRender(root, true); }
+    else if (e.key === 'Enter') { e.preventDefault(); if (res[PES.hi]) peAddKatalog(root, res[PES.hi].id_barang); else toast('Barang tidak ditemukan di katalog. Gunakan "Barang manual".', 'warn'); }
+    else if (e.key === 'Escape') { const lst = root.querySelector('#pe-list'); if (!e.target.value && lst.hidden) return; e.preventDefault(); e.stopPropagation(); if (e.target.value) { e.target.value = ''; PES.q = ''; PES.hi = 0; peSearchRender(root, true); } else peSearchRender(root, false); }
+  });
   root.addEventListener('click', (e) => {
+    const pick = e.target.closest('[data-pick]');
+    if (pick) { peAddKatalog(root, pick.dataset.pick); return; }
+    if (!e.target.closest('.pe-search')) peSearchRender(root, false);
     const del = e.target.closest('[data-del]');
     if (del) { PE.items.splice(Number(del.dataset.del), 1); PE.dirty = true; renderPERows(root); return; }
     const b = e.target.closest('button');
     if (!b) return;
-    if (b.id === 'pe-add') {
-      const ib = root.querySelector('#pe-b').value;
-      if (!ib) return toast('Pilih barang dari katalog dulu.', 'warn');
-      const k = App.maps.katalog[ib];
-      // Barang yang sama selalu dibuat baris baru (bisa beda spek/ukuran)
-      const dupIdx = PE.items.findIndex((x) => x.id_barang === ib);
-      const sp = parseSpek(k.spesifikasi) ? k.spesifikasi.match(/\d+(?:[.,]\d+)?\s*(?:m(?:eter)?)?\s*[x×X*]\s*\d+(?:[.,]\d+)?/)[0] : parseSpek(k.nama_barang) ? k.nama_barang.match(/\d+(?:[.,]\d+)?\s*(?:m(?:eter)?)?\s*[x×X*]\s*\d+(?:[.,]\d+)?/)[0] : '';
-      const it = Object.assign(peDefaults(root), { id_vendor: k.id_vendor, id_barang: k.id_barang, nama_barang: k.nama_barang, kategori: k.kategori, satuan: k.satuan, jumlah: 1, spek: dupIdx >= 0 ? '' : sp, qty_unit: 1, harga_estimasi_satuan: k.harga_estimasi, harga_vendor_satuan: k.harga_vendor });
-      peRecalc(it);
-      PE.items.push(it);
-      if (dupIdx >= 0) toast(`"${k.nama_barang}" sudah ada di baris ${dupIdx + 1}. Baris baru ditambahkan di bawah — isi spek/ukurannya.`, 'info', 4500);
-      PE.dirty = true; renderPERows(root);
-      const last = PE.items.length - 1;
-      const rowEl = root.querySelectorAll('.pe-row')[last];
-      if (rowEl) { rowEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); if (dupIdx >= 0) { const sIn = rowEl.querySelector('[data-f="spek"]'); if (sIn) sIn.focus(); } }
-    } else if (b.id === 'pe-manual') {
+    if (b.id === 'pe-manual') {
       const iv = root.querySelector('#pe-v').value;
       if (!iv) return toast('Pilih vendor dulu untuk barang di luar katalog.', 'warn');
       PE.items.push(Object.assign(peDefaults(root), { id_vendor: iv, id_barang: '', nama_barang: '', kategori: 'Lainnya', satuan: 'unit', jumlah: 1, spek: '', qty_unit: 1, harga_estimasi_satuan: 0, harga_vendor_satuan: 0, manual: true }));
@@ -845,10 +883,62 @@ function openPesananEditor(ida) {
     await App.write('savePesananAcara', { id_acara: PE.acara, items }, { btn: e.currentTarget });
   });
 }
-function barangOpts(iv) {
-  const list = D().katalog.filter((k) => k.aktif && (!iv || k.id_vendor === iv)).sort((a, b) => a.kategori.localeCompare(b.kategori) || a.nama_barang.localeCompare(b.nama_barang));
-  if (!list.length) return '<option value="">— Katalog kosong untuk vendor ini —</option>';
-  return '<option value="">Pilih barang dari katalog</option>' + list.map((k) => `<option value="${k.id_barang}">${esc(k.nama_barang)} — ${rp(k.harga_vendor)}/${esc(k.satuan)}${iv ? '' : ' • ' + esc(App.vName(k.id_vendor))}</option>`).join('');
+/* --- Pencarian cepat barang katalog (combobox) --- */
+const PES = { q: '', hi: 0 };
+function peSearchResults() {
+  const toks = PES.q.toLowerCase().split(/\s+/).filter(Boolean);
+  const list = D().katalog.filter((k) => k.aktif && (!PE.vendor || k.id_vendor === PE.vendor));
+  const hit = toks.length ? list.filter((k) => {
+    const hay = [k.nama_barang, k.kategori, k.spesifikasi, k.satuan, App.vName(k.id_vendor)].join(' ').toLowerCase();
+    return toks.every((t) => hay.includes(t));
+  }) : list;
+  const q0 = toks[0] || '';
+  // skor: 0 = nama diawali kata kunci, 1 = semua kata ada di nama, 2 = cocok di kategori/spek/vendor
+  const score = (k) => { const n = k.nama_barang.toLowerCase(); return !toks.length ? 0 : n.startsWith(q0) ? 0 : toks.every((t) => n.includes(t)) ? 1 : 2; };
+  return hit.map((k) => ({ k, s: score(k) })).sort((a, b) => a.s - b.s || a.k.kategori.localeCompare(b.k.kategori) || a.k.nama_barang.localeCompare(b.k.nama_barang)).map((x) => x.k).slice(0, 60);
+}
+function peSearchRender(root, open) {
+  const box = root.querySelector('#pe-list');
+  if (!box) return;
+  if (!open) { box.hidden = true; return; }
+  const res = peSearchResults();
+  if (PES.hi >= res.length) PES.hi = Math.max(0, res.length - 1);
+  const used = {}; PE.items.forEach((x) => { if (x.id_barang) used[x.id_barang] = (used[x.id_barang] || 0) + 1; });
+  box.innerHTML = res.length ? res.map((k, i) => `
+    <button type="button" class="pe-opt ${i === PES.hi ? 'hi' : ''}" data-pick="${esc(k.id_barang)}">
+      <span class="pe-opt-main"><span><b>${esc(k.nama_barang)}</b>${used[k.id_barang] ? ` <span class="badge b-info no-dot">sudah ${used[k.id_barang]}×</span>` : ''}</span>
+        <span class="small muted">${esc(k.kategori)}${k.spesifikasi ? ' • ' + esc(k.spesifikasi) : ''}${PE.vendor ? '' : ' • ' + esc(App.vName(k.id_vendor))}</span></span>
+      <span class="pe-opt-pr tnum">${rp(k.harga_vendor)}<span class="small muted">/${esc(k.satuan)}</span></span>
+    </button>`).join('')
+    : `<div class="pe-opt-empty">${PES.q ? 'Tidak ada barang cocok dengan "' + esc(PES.q) + '".' : 'Katalog kosong untuk vendor ini.'} Gunakan <b>Barang manual</b> untuk barang di luar katalog.</div>`;
+  box.hidden = false;
+  const h = box.querySelector('.pe-opt.hi'); if (h) h.scrollIntoView({ block: 'nearest' });
+}
+function peAddKatalog(root, ib) {
+  const k = App.maps.katalog[ib];
+  if (!k) return toast('Barang tidak ditemukan di katalog.', 'warn');
+  // Barang yang sama selalu dibuat baris baru (bisa beda spek/ukuran)
+  const dupIdx = PE.items.findIndex((x) => x.id_barang === ib);
+  const re = /\d+(?:[.,]\d+)?\s*(?:m(?:eter)?)?\s*[x×X*]\s*\d+(?:[.,]\d+)?/;
+  const sp = parseSpek(k.spesifikasi) && re.test(k.spesifikasi) ? k.spesifikasi.match(re)[0] : parseSpek(k.nama_barang) && re.test(k.nama_barang) ? k.nama_barang.match(re)[0] : '';
+  const it = Object.assign(peDefaults(root), { id_vendor: k.id_vendor, id_barang: k.id_barang, nama_barang: k.nama_barang, kategori: k.kategori, satuan: k.satuan, jumlah: 1, spek: dupIdx >= 0 ? '' : sp, qty_unit: 1, harga_estimasi_satuan: k.harga_estimasi, harga_vendor_satuan: k.harga_vendor });
+  peRecalc(it);
+  PE.items.push(it);
+  if (dupIdx >= 0) toast(`"${k.nama_barang}" sudah ada di baris ${dupIdx + 1}. Baris baru ditambahkan di bawah — isi spek/ukurannya.`, 'info', 4500);
+  else toast(`${k.nama_barang} ditambahkan.`, 'success', 1600);
+  PE.dirty = true; renderPERows(root);
+  // kosongkan pencarian agar bisa langsung cari barang berikutnya
+  const q = root.querySelector('#pe-q'); PES.q = ''; PES.hi = 0;
+  if (q) q.value = '';
+  peSearchRender(root, false);
+  const last = PE.items.length - 1;
+  const rowEl = root.querySelectorAll('.pe-row')[last];
+  if (rowEl) {
+    rowEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    rowEl.classList.add('flash');
+    if (dupIdx >= 0) { const sIn = rowEl.querySelector('[data-f="spek"]'); if (sIn) sIn.focus(); } else if (q) q.focus();
+  }
+  if (q && dupIdx < 0) setTimeout(() => peSearchRender(root, false), 0);
 }
 function peDefaults(root) {
   const g = (id) => (root.querySelector(id) || {}).value || '';
@@ -862,8 +952,10 @@ function renderPE(root) {
     ${!PE.acara ? `<div class="callout info">${ic('info', 18)}<div>Pilih acara terlebih dahulu untuk mengelola daftar barang yang disewa.</div></div>` : `
     <div class="pe-bar">
       <div class="field"><label>Vendor</label><select class="select sm" id="pe-v">${vendorOpts(PE.vendor, 'Semua vendor')}</select></div>
-      <div class="field"><label>Barang dari katalog</label><select class="select sm" id="pe-b">${barangOpts(PE.vendor)}</select></div>
-      <button class="btn btn-primary btn-sm" id="pe-add" type="button">${ic('plus', 15)} Tambah</button>
+      <div class="field pe-search"><label>Cari &amp; tambah barang dari katalog</label>
+        <div class="search">${ic('search', 16)}<input type="search" id="pe-q" autocomplete="off" placeholder="Ketik nama barang, mis. tenda 6, kursi, sound..." value="${esc(PES.q)}"></div>
+        <div class="pe-list" id="pe-list" hidden></div>
+      </div>
       <button class="btn btn-soft btn-sm" id="pe-manual" type="button">${ic('edit', 14)} Barang manual</button>
     </div>
     <div class="pe-defaults">
@@ -1005,7 +1097,7 @@ AdminViews.pembayaran = {
     <div class="page-head"><div><span class="eyebrow">${ic('wallet', 13)} Keuangan</span><h1>Pembayaran Vendor</h1><p>Satu pembayaran dapat dialokasikan ke beberapa acara sekaligus. Sisa tagihan tiap acara diperbarui otomatis.</p></div>
       <button class="btn btn-primary" data-act="new-bayar">${ic('plus', 17)} Catat Pembayaran</button></div>
     <div class="mini-kpis stagger">
-      <div class="mini-kpi" style="--i:0"><div class="l">Dibayar Tahun ${year}</div><div class="v">${countEl(thisYear.reduce((s, p) => s + p.nominal_total, 0))}</div><div class="s">${thisYear.length} transaksi</div></div>
+      <div class="mini-kpi" style="--i:0"><div class="l">Dibayar Tahun ${year}</div><div class="v">${countEl(thisYear.reduce((s, p) => s + p.nominal_total, 0))}</div><div class="s">${thisYear.length} transaksi${(t.potongan || 0) + (t.potongan_gab || 0) > 0 ? ` • <span class="tx-ok">${ic('tag', 11)} potongan diterima ${rp((t.potongan || 0) + (t.potongan_gab || 0))}</span>` : ''}</div></div>
       <div class="mini-kpi" style="--i:1"><div class="l tx-bad">Sisa Tagihan Vendor</div><div class="v tx-bad">${countEl(t.sisa)}</div><div class="s">${t.n_tagihan} tagihan • ${t.n_lewat} lewat jatuh tempo</div></div>
       <div class="mini-kpi" style="--i:2"><div class="l">Total Biaya Riil</div><div class="v">${countEl(t.tagihan)}</div><div class="s">Semua acara aktif</div></div>
       <div class="mini-kpi" style="--i:3"><div class="l">Nota Belum Diteruskan</div><div class="v">${belumNota}</div><div class="s">ke panitia</div></div>
@@ -1023,8 +1115,8 @@ AdminViews.pembayaran = {
         empty: emptyState('Belum ada pembayaran', 'Catat pembayaran pertama ke vendor.', 'wallet'),
         cols: [
           { key: 'tanggal_bayar', label: 'Tanggal & Vendor', main: true, render: (r) => `<div class="row" style="gap:12px"><span class="t-ic">${ic('wallet', 18)}</span><div style="min-width:0"><div class="t-main">${esc(App.vName(r.id_vendor))}</div><div class="t-sub">${tgl(r.tanggal_bayar)} • ${esc(r.metode)}</div></div></div>` },
-          { key: 'nominal_total', label: 'Nominal', align: 'r', render: (r) => `<b class="tnum">${rp(r.nominal_total)}</b>` },
-          { key: 'alokasi', label: 'Dialokasikan ke', sort: false, render: (r) => `<div class="stack" style="gap:2px;align-items:inherit">${d.alokasi.filter((a) => a.id_pembayaran === r.id_pembayaran).map((a) => `<span class="small"><a href="#/acara/${encodeURIComponent(a.id_acara)}">${esc(App.acara(a.id_acara).nama_acara)}</a> <span class="muted tnum">${rp(a.nominal)}</span></span>`).join('')}</div>` },
+          { key: 'nominal_total', label: 'Nominal', align: 'r', render: (r) => { const al = d.alokasi.filter((a) => a.id_pembayaran === r.id_pembayaran); return `<b class="tnum">${rp(r.nominal_total)}</b>${potText(al.reduce((s, a) => s + num(a.diskon), 0), num(r.diskon_total))}`; } },
+          { key: 'alokasi', label: 'Dialokasikan ke', sort: false, render: (r) => `<div class="stack" style="gap:2px;align-items:inherit">${d.alokasi.filter((a) => a.id_pembayaran === r.id_pembayaran).map((a) => `<span class="small"><a href="#/acara/${encodeURIComponent(a.id_acara)}">${esc(App.acara(a.id_acara).nama_acara)}</a> <span class="muted tnum">${rp(a.nominal)}</span>${num(a.diskon) > 0 ? ` <span class="xs tx-ok">−pot ${rp(a.diskon)}</span>` : ''}${num(a.diskon_gab) > 0 ? ` <span class="xs muted" title="Bagian potongan gabungan (hanya Admin)">${ic('lock', 10)} ${rp(a.diskon_gab)}</span>` : ''}</span>`).join('')}</div>` },
           { key: 'berkas', label: 'Bukti & Nota', sort: false, render: (r) => `<div class="row" style="gap:6px;justify-content:inherit">${fileLink(r.id_berkas_bukti, 'Bukti', 'Bukti Transfer')}${fileLink(r.id_berkas_nota, 'Nota', 'Nota Vendor')}</div>${r.id_berkas_bukti ? `<div class="xs ${r.tampilkan_ke_vendor ? 'tx-ok' : 'muted'}" style="margin-top:3px">${r.tampilkan_ke_vendor ? '● tampil ke vendor' : '○ tersembunyi dari vendor'}</div>` : ''}` },
           { key: 'nota_diteruskan', label: 'Nota → Panitia', render: (r) => `<button class="btn btn-xs ${r.nota_diteruskan ? 'btn-mint' : 'btn-soft'}" data-act="nota-toggle" data-id="${r.id_pembayaran}" data-v="${r.nota_diteruskan ? '0' : '1'}">${ic(r.nota_diteruskan ? 'checkCircle' : 'circle', 14)} ${r.nota_diteruskan ? 'Diteruskan ' + tgl(r.tanggal_nota_diteruskan) : 'Belum diteruskan'}</button>` },
           { key: '', label: '', acts: true, sort: false, render: (r) => `<div class="acts"><button class="btn btn-ghost btn-sm" data-act="edit-bayar" data-id="${r.id_pembayaran}" aria-label="Edit">${ic('edit', 15)}</button><button class="btn btn-ghost btn-sm tx-bad" data-act="del-bayar" data-id="${r.id_pembayaran}" aria-label="Hapus">${ic('trash', 15)}</button></div>` }
@@ -1035,7 +1127,7 @@ AdminViews.pembayaran = {
   perVendor() {
     const rows = D().vendor.map((v) => {
       const av = D().fin.av.filter((x) => x.id_vendor === v.id_vendor && !isOff(App.maps.acara[x.id_acara]));
-      return { id_vendor: v.id_vendor, nama: v.nama_vendor, tagihan: av.reduce((s, x) => s + x.tagihan, 0), dibayar: av.reduce((s, x) => s + x.dibayar, 0), sisa: av.reduce((s, x) => s + Math.max(0, x.sisa), 0), n: av.filter((x) => x.sisa > 0).length, umur: Math.max(0, ...av.filter((x) => x.sisa > 0).map((x) => x.umur)) };
+      return { id_vendor: v.id_vendor, nama: v.nama_vendor, tagihan: av.reduce((s, x) => s + x.tagihan, 0), dibayar: av.reduce((s, x) => s + x.dibayar, 0), potongan: av.reduce((s, x) => s + x.potongan + x.potongan_gab, 0), sisa: av.reduce((s, x) => s + Math.max(0, x.sisa), 0), n: av.filter((x) => x.sisa > 0).length, umur: Math.max(0, ...av.filter((x) => x.sisa > 0).map((x) => x.umur)) };
     }).filter((r) => r.tagihan > 0 || r.dibayar > 0);
     return DT.render('bayar-vendor', {
       rows, sort: 'sisa', dir: 'desc', empty: emptyState('Belum ada tagihan vendor', '', 'checkCircle'),
@@ -1043,6 +1135,7 @@ AdminViews.pembayaran = {
         { key: 'nama', label: 'Vendor', main: true, render: (r) => `<div class="row" style="gap:12px"><span class="li-ic mint">${initials(r.nama)}</span><div><div class="t-main">${esc(r.nama)}</div><div class="t-sub">${r.n} acara belum lunas</div></div></div>` },
         { key: 'tagihan', label: 'Total Tagihan', align: 'r', render: (r) => `<span class="tnum">${rp(r.tagihan)}</span>` },
         { key: 'dibayar', label: 'Dibayar', align: 'r', render: (r) => `<span class="tnum">${rp(r.dibayar)}</span>` },
+        { key: 'potongan', label: 'Potongan', align: 'r', render: (r) => r.potongan > 0 ? `<span class="tnum tx-ok">${rp(r.potongan)}</span>` : '<span class="muted">-</span>' },
         { key: 'sisa', label: 'Sisa', align: 'r', render: (r) => `<b class="tnum ${r.sisa > 0 ? 'tx-bad' : 'tx-ok'}">${rp(r.sisa)}</b>` },
         { key: 'umur', label: 'Jatuh Tempo', render: (r) => r.sisa > 0 ? agingPill(r.umur, ambang()) : badge('Lunas', 'b-ok') },
         { key: '', label: '', acts: true, sort: false, render: (r) => `<div class="acts">${r.sisa > 0 ? `<button class="btn btn-primary btn-sm" data-act="new-bayar" data-vendor="${r.id_vendor}">${ic('wallet', 14)} Bayar</button>` : ''}<button class="btn btn-soft btn-sm" data-act="rekap-vendor" data-id="${r.id_vendor}">${ic('printer', 14)} Rekap</button></div>` }
@@ -1072,24 +1165,37 @@ function openBayarForm(opt = {}) {
     const cand = d.fin.av.filter((x) => x.id_acara === opt.id_acara && x.sisa > 0);
     if (cand.length === 1) vendor = cand[0].id_vendor;
   }
-  const PM = { vendor, alok: {}, orig: {}, extra: opt.id_acara ? [opt.id_acara] : [] };
-  if (edit) d.alokasi.filter((a) => a.id_pembayaran === edit.id_pembayaran).forEach((a) => { PM.orig[a.id_acara] = (PM.orig[a.id_acara] || 0) + a.nominal; });
-  PM.alok = Object.assign({}, PM.orig);
+  // alok = uang dibayar, pot = potongan per acara (tampil di PDF), gab = bagian potongan gabungan (hanya Admin)
+  const PM = { vendor, alok: {}, pot: {}, gab: {}, orig: {}, extra: opt.id_acara ? [opt.id_acara] : [] };
+  if (edit) d.alokasi.filter((a) => a.id_pembayaran === edit.id_pembayaran).forEach((a) => {
+    const o = PM.orig[a.id_acara] || (PM.orig[a.id_acara] = { c: 0, p: 0, g: 0 });
+    o.c += num(a.nominal); o.p += num(a.diskon); o.g += num(a.diskon_gab);
+  });
+  const fromOrig = () => { PM.alok = {}; PM.pot = {}; Object.keys(PM.orig).forEach((k) => { if (PM.orig[k].c) PM.alok[k] = PM.orig[k].c; if (PM.orig[k].p) PM.pot[k] = PM.orig[k].p; }); };
+  fromOrig();
   const metode = edit ? edit.metode : 'Transfer';
+  const dgab0 = edit ? num(edit.diskon_total) : 0;
   const m = Modal.open({
-    title: edit ? 'Edit Pembayaran Vendor' : 'Catat Pembayaran Vendor', sub: 'Satu transfer/tunai bisa dibagi ke beberapa acara sekaligus.', size: 'lg',
+    title: edit ? 'Edit Pembayaran Vendor' : 'Catat Pembayaran Vendor', sub: 'Satu transfer/tunai bisa dibagi ke beberapa acara sekaligus — termasuk potongan harga dari vendor (opsional).', size: 'xl',
     body: `
       <div class="field"><label><span>Pilih rekanan vendor <span class="req">*</span></span><span class="small tx-bad" id="pm-owed"></span></label><select class="select" id="pm-vendor">${vendorOpts(vendor, 'Pilih vendor', false)}</select></div>
       <div class="form-grid" style="margin-top:14px">
         <div class="field"><label>Tanggal pembayaran <span class="req">*</span></label><input class="input" type="date" id="pm-tgl" value="${edit ? edit.tanggal_bayar : App.today}"></div>
         <div class="field"><label>Metode pembayaran</label>${seg('pm-metode', [{ value: 'Transfer', label: ic('checkCircle', 15) + ' Transfer Bank' }, { value: 'Tunai', label: ic('wallet', 15) + ' Tunai' }], metode)}</div>
       </div>
-      <div class="field" style="margin-top:14px"><label><span>Nominal total yang dikeluarkan <span class="req">*</span></span><button class="btn btn-primary btn-xs" type="button" id="pm-auto">${ic('zap', 13)} Lunasi acara paling lama dulu</button></label>
+      <div class="field" style="margin-top:14px"><label><span>Nominal uang yang dikeluarkan <span class="req">*</span></span><button class="btn btn-primary btn-xs" type="button" id="pm-auto">${ic('zap', 13)} Lunasi acara paling lama dulu</button></label>
         <div class="input-group"><span class="pre big" style="font-family:var(--font-head);font-weight:700">Rp</span><input class="input tnum money money-big" id="pm-nominal" inputmode="numeric" value="${edit ? fmtNum(edit.nominal_total) : ''}" placeholder="0"></div>
         <div class="row between wrap"><span class="terbilang">Terbilang: <b id="pm-terbilang">-</b></span><span class="small tx-primary bold" id="pm-rek"></span></div></div>
+      <div class="disc-box" style="margin-top:14px">
+        <div class="disc-head">${ic('tag', 16)} <b>Potongan gabungan dari total</b> <span class="badge b-dark no-dot">${ic('lock', 11)} hanya Admin</span> <span class="small muted">(opsional)</span></div>
+        <div class="disc-grid">
+          <div class="input-group"><span class="pre small">Rp</span><input class="input sm tnum money" id="pm-dgab" inputmode="numeric" value="${dgab0 ? fmtNum(dgab0) : ''}" placeholder="0"></div>
+          <div class="small muted">Potongan untuk <b>gabungan beberapa acara</b> (mis. "total 12.500.000 jadi 12.000.000"). Dibagi otomatis secara proporsional ke acara yang dibayar. <b>Tidak tampil</b> di PDF panitia — panitia tetap menyetor sesuai biaya acaranya. Untuk potongan <b>khusus satu acara</b> (tampil di PDF rekap), isi kolom <b>Potongan acara</b> di tabel bawah.</div>
+        </div>
+      </div>
       <div class="section" style="margin-top:18px">
         <div class="alloc-bar" id="pm-bar"></div>
-        <div class="alloc-row alloc-head"><span>Nama acara</span><span class="right">Sisa tagihan</span><span>Alokasi (Rp)</span><span>Status pasca bayar</span></div>
+        <div class="alloc-row alloc5 alloc-head"><span>Nama acara</span><span class="right">Sisa tagihan</span><span>Bayar (Rp)</span><span>Potongan acara <span class="muted" style="text-transform:none;font-weight:500">(opsional)</span></span><span>Status pasca bayar</span></div>
         <div id="pm-rows"></div>
         <div class="row" style="margin-top:10px;gap:8px"><select class="select sm" id="pm-addsel" style="flex:1"></select><button class="btn btn-soft btn-sm" type="button" id="pm-addbtn">${ic('plus', 14)} Tambah acara</button></div>
         <div class="hint" style="margin-top:4px">Gunakan "Tambah acara" untuk DP/uang muka acara yang belum punya tagihan.</div>
@@ -1104,16 +1210,33 @@ function openBayarForm(opt = {}) {
     foot: `<span class="note">${ic('lock', 14)} Tercatat di jurnal kas & log aktivitas.</span><button class="btn btn-ghost" data-modal-close>Batal</button><button class="btn btn-primary" id="pm-save">${ic('check', 16)} Simpan Pembayaran</button>`
   });
   const $ = (s) => m.querySelector(s);
-  const sisaNow = (ida) => { const av = App.avOf(ida, PM.vendor); return (av ? av.sisa : 0) + (PM.orig[ida] || 0); };
+  const o0 = (k) => PM.orig[k] || { c: 0, p: 0, g: 0 };
+  const sisaNow = (ida) => { const av = App.avOf(ida, PM.vendor), o = o0(ida); return (av ? av.sisa : 0) + o.c + o.p + o.g; };
   const rowIds = () => {
     if (!PM.vendor) return [];
     const ids = new Set(d.fin.av.filter((x) => x.id_vendor === PM.vendor && x.sisa > 0 && !isOff(App.maps.acara[x.id_acara])).map((x) => x.id_acara));
     Object.keys(PM.alok).forEach((k) => ids.add(k));
+    Object.keys(PM.pot).forEach((k) => ids.add(k));
     PM.extra.forEach((k) => ids.add(k));
     return [...ids].filter((k) => App.maps.acara[k]).sort((a, b) => {
       const x = App.avOf(a, PM.vendor), y = App.avOf(b, PM.vendor);
       return ((y && y.umur) || 0) - ((x && x.umur) || 0) || App.acara(a).tanggal_mulai.localeCompare(App.acara(b).tanggal_mulai);
     });
+  };
+  /** Bagi potongan gabungan secara proporsional ke sisa yang belum tertutup (uang + potongan acara). */
+  const distribGab = () => {
+    const G = parseMoney($('#pm-dgab').value), ids = rowIds();
+    PM.gab = {};
+    if (!(G > 0) || !ids.length) return { G, over: 0 };
+    let inv = ids.filter((k) => (PM.alok[k] || 0) > 0 || (PM.pot[k] || 0) > 0);
+    if (!inv.length) inv = ids.filter((k) => sisaNow(k) > 0);
+    if (!inv.length) inv = ids.slice(0, 1);
+    const rem = inv.map((k) => Math.max(0, sisaNow(k) - (PM.pot[k] || 0) - (PM.alok[k] || 0)));
+    const R = rem.reduce((s, x) => s + x, 0);
+    const w = R > 0 ? rem : inv.map(() => 1), W = R > 0 ? R : inv.length;
+    let left = G;
+    inv.forEach((k, i) => { const g = i === inv.length - 1 ? left : Math.floor((G * w[i]) / W); PM.gab[k] = g; left -= g; });
+    return { G, over: Math.max(0, G - R) };
   };
   const renderRows = () => {
     const v = App.maps.vendor[PM.vendor];
@@ -1125,9 +1248,10 @@ function openBayarForm(opt = {}) {
       : ids.length ? ids.map((k) => {
         const a = App.acara(k);
         const items = d.pesanan.filter((p) => p.id_acara === k && p.id_vendor === PM.vendor).map((p) => p.nama_barang);
-        return `<div class="alloc-row"><div class="a-name"><div class="bold">${esc(a.nama_acara)}</div><div class="small muted ellipsis">${tgl(a.tanggal_mulai)}${items.length ? ' • ' + esc(items.slice(0, 3).join(', ')) + (items.length > 3 ? '…' : '') : ''}</div></div>
+        return `<div class="alloc-row alloc5"><div class="a-name"><div class="bold">${esc(a.nama_acara)}</div><div class="small muted ellipsis">${tgl(a.tanggal_mulai)}${items.length ? ' • ' + esc(items.slice(0, 3).join(', ')) + (items.length > 3 ? '…' : '') : ''}</div></div>
           <div class="right"><span class="ml">Sisa tagihan</span><b class="tnum">${rp(sisaNow(k))}</b></div>
-          <div><span class="ml">Alokasi</span><div class="input-group"><span class="pre small">Rp</span><input class="input sm tnum money" data-alok="${esc(k)}" inputmode="numeric" value="${PM.alok[k] ? fmtNum(PM.alok[k]) : ''}" placeholder="0"></div></div>
+          <div><span class="ml">Bayar (uang)</span><div class="input-group"><span class="pre small">Rp</span><input class="input sm tnum money" data-alok="${esc(k)}" inputmode="numeric" value="${PM.alok[k] ? fmtNum(PM.alok[k]) : ''}" placeholder="0"></div></div>
+          <div><span class="ml">Potongan acara (opsional)</span><div class="input-group"><span class="pre small">Rp</span><input class="input sm tnum money" data-pot="${esc(k)}" inputmode="numeric" value="${PM.pot[k] ? fmtNum(PM.pot[k]) : ''}" placeholder="0"></div></div>
           <div id="pm-st-${esc(k)}"></div></div>`;
       }).join('') : `<div style="padding:10px 0">${emptyState('Tidak ada tagihan tertunda untuk vendor ini', 'Tambahkan acara di bawah bila ini uang muka.', 'checkCircle')}</div>`;
     const inRows = new Set(ids);
@@ -1137,39 +1261,57 @@ function openBayarForm(opt = {}) {
   const update = () => {
     const nominal = parseMoney($('#pm-nominal').value);
     $('#pm-terbilang').textContent = nominal ? terbilang(nominal) : '-';
-    let tot = 0;
+    const gd = distribGab();
+    let tot = 0, totPot = 0;
     rowIds().forEach((k) => {
-      const al = PM.alok[k] || 0, s = sisaNow(k);
-      tot += al;
+      const al = PM.alok[k] || 0, pt = PM.pot[k] || 0, g = PM.gab[k] || 0, s = sisaNow(k), cov = al + pt + g;
+      tot += al; totPot += pt;
       const el = m.querySelector('#pm-st-' + CSS.escape(k));
       if (!el) return;
-      el.innerHTML = '<span class="ml">Status baru</span>' + (al <= 0 ? badge('Belum dialokasikan', 'b-neu')
-        : al > s ? badge('Melebihi ' + rp(al - s), 'b-bad')
-        : al >= s ? badge('LUNAS (100%)', 'b-ok') : badge('Sisa ' + rp(s - al), 'b-warn'));
+      el.innerHTML = '<span class="ml">Status baru</span>' + (cov <= 0 ? badge('Belum dialokasikan', 'b-neu')
+        : cov > s + 0.5 ? badge('Melebihi ' + rp(cov - s), 'b-bad')
+        : cov >= s - 0.5 ? badge('LUNAS (100%)', 'b-ok') : badge('Sisa ' + rp(s - cov), 'b-warn'))
+        + (pt || g ? `<div class="xs muted" style="margin-top:3px">${pt ? 'pot. acara ' + rp(pt) : ''}${pt && g ? ' • ' : ''}${g ? `<span title="Bagian potongan gabungan — hanya Admin">${ic('lock', 10)} gab. ${rp(g)}</span>` : ''}</div>` : '');
     });
     const bar = $('#pm-bar'), diff = nominal - tot;
-    bar.className = 'alloc-bar' + (diff === 0 && nominal > 0 ? '' : diff < 0 ? ' over' : ' off');
-    bar.innerHTML = `<span>${ic('wallet', 16)} Alokasi pembayaran per acara</span><span class="tnum">Terdistribusi: ${rp(tot)} / ${rp(nominal)} ${!nominal && !tot ? badge('Isi nominal', 'b-neu') : diff === 0 ? badge('SEIMBANG ✓', 'b-dark no-dot') : diff > 0 ? badge('Kurang ' + rp(diff), 'b-warn') : badge('Lebih ' + rp(-diff), 'b-bad')}</span>`;
+    const disc = totPot + (gd.G || 0);
+    const ok = diff === 0 && (nominal > 0 || disc > 0);
+    bar.className = 'alloc-bar' + (ok ? '' : diff < 0 ? ' over' : ' off');
+    bar.innerHTML = `<span>${ic('wallet', 16)} Alokasi uang per acara${disc ? ` <span class="small" style="font-weight:500">• potongan ${rp(disc)}${gd.G ? ` (gabungan ${rp(gd.G)})` : ''}</span>` : ''}</span><span class="tnum">Terdistribusi: ${rp(tot)} / ${rp(nominal)} ${!nominal && !tot ? badge(disc ? 'Tanpa uang (potongan saja)' : 'Isi nominal', 'b-neu') : diff === 0 ? badge('SEIMBANG ✓', 'b-dark no-dot') : diff > 0 ? badge('Kurang ' + rp(diff), 'b-warn') : badge('Lebih ' + rp(-diff), 'b-bad')}</span>`;
+    const dg = $('#pm-dgab').closest('.disc-box');
+    dg.classList.toggle('warn', gd.over > 0.5);
+    let w = dg.querySelector('.disc-warn');
+    if (gd.over > 0.5) { if (!w) { w = document.createElement('div'); w.className = 'disc-warn small tx-bad'; dg.appendChild(w); } w.textContent = '⚠ Potongan gabungan melebihi sisa yang belum tertutup sebesar ' + rp(gd.over) + '. Kurangi nominal bayar atau potongannya.'; }
+    else if (w) w.remove();
   };
-  const origSaved = Object.assign({}, PM.orig);
+  const origSaved = JSON.parse(JSON.stringify(PM.orig));
   $('#pm-vendor').addEventListener('change', (e) => {
     PM.vendor = e.target.value;
     const same = edit && PM.vendor === edit.id_vendor;
-    PM.orig = same ? Object.assign({}, origSaved) : {};
-    PM.alok = Object.assign({}, PM.orig);
+    PM.orig = same ? JSON.parse(JSON.stringify(origSaved)) : {};
+    fromOrig();
     renderRows();
   });
   $('#pm-nominal').addEventListener('input', update);
-  $('#pm-rows').addEventListener('input', (e) => { const k = e.target.dataset.alok; if (k !== undefined) { PM.alok[k] = parseMoney(e.target.value); update(); } });
+  $('#pm-dgab').addEventListener('input', update);
+  $('#pm-rows').addEventListener('input', (e) => {
+    const k = e.target.dataset.alok, kp = e.target.dataset.pot;
+    if (k !== undefined) PM.alok[k] = parseMoney(e.target.value);
+    else if (kp !== undefined) PM.pot[kp] = parseMoney(e.target.value);
+    else return;
+    update();
+  });
   $('#pm-addbtn').addEventListener('click', () => { const k = $('#pm-addsel').value; if (!k) return toast('Pilih acara dulu.', 'warn'); if (!PM.vendor) return toast('Pilih vendor dulu.', 'warn'); PM.extra.push(k); renderRows(); });
   $('#pm-auto').addEventListener('click', () => {
     if (!PM.vendor) return toast('Pilih vendor terlebih dahulu.', 'warn');
     const ids = rowIds();
+    const need = (k) => Math.max(0, sisaNow(k) - (PM.pot[k] || 0));
+    const G = parseMoney($('#pm-dgab').value);
     let nominal = parseMoney($('#pm-nominal').value);
-    if (!nominal) { nominal = ids.reduce((s, k) => s + Math.max(0, sisaNow(k)), 0); $('#pm-nominal').value = fmtNum(nominal); }
+    if (!nominal) { nominal = Math.max(0, ids.reduce((s, k) => s + need(k), 0) - G); $('#pm-nominal').value = nominal ? fmtNum(nominal) : ''; }
     let rest = nominal;
     PM.alok = {};
-    ids.forEach((k) => { const take = Math.min(rest, Math.max(0, sisaNow(k))); if (take > 0) { PM.alok[k] = take; rest -= take; } });
+    ids.forEach((k) => { const take = Math.min(rest, need(k)); if (take > 0) { PM.alok[k] = take; rest -= take; } });
     if (rest > 0 && ids.length) { PM.alok[ids[0]] = (PM.alok[ids[0]] || 0) + rest; toast('Nominal melebihi total tagihan — sisanya dialokasikan ke acara pertama.', 'warn', 4500); }
     m.querySelectorAll('[data-alok]').forEach((inp) => { const v = PM.alok[inp.dataset.alok]; inp.value = v ? fmtNum(v) : ''; });
     update();
@@ -1180,12 +1322,17 @@ function openBayarForm(opt = {}) {
     const nominal = parseMoney($('#pm-nominal').value);
     if (!PM.vendor) return toast('Pilih vendor terlebih dahulu.', 'warn');
     if (!$('#pm-tgl').value) return toast('Tanggal pembayaran wajib diisi.', 'warn');
-    if (!(nominal > 0)) return toast('Nominal pembayaran harus lebih dari 0.', 'warn');
-    const alokasi = Object.keys(PM.alok).filter((k) => PM.alok[k] > 0).map((k) => ({ id_acara: k, nominal: PM.alok[k] }));
+    const gd = distribGab();
+    const ids = rowIds();
+    const alokasi = ids.map((k) => ({ id_acara: k, nominal: PM.alok[k] || 0, diskon: PM.pot[k] || 0, diskon_gab: PM.gab[k] || 0 }))
+      .filter((a) => a.nominal > 0 || a.diskon > 0 || a.diskon_gab > 0);
     const tot = alokasi.reduce((s, a) => s + a.nominal, 0);
+    const disc = alokasi.reduce((s, a) => s + a.diskon + a.diskon_gab, 0);
+    if (!(nominal > 0) && !(disc > 0)) return toast('Nominal pembayaran harus lebih dari 0 (atau isi potongan).', 'warn');
     if (!alokasi.length) return toast('Alokasikan nominal ke minimal satu acara.', 'warn');
-    if (tot !== nominal) return toast(`Total alokasi (${rp(tot)}) harus sama dengan nominal (${rp(nominal)}).`, 'warn', 5000);
-    const lebih = alokasi.filter((a) => a.nominal > sisaNow(a.id_acara));
+    if (tot !== nominal) return toast(`Total alokasi uang (${rp(tot)}) harus sama dengan nominal (${rp(nominal)}).`, 'warn', 5000);
+    if (gd.over > 0.5 && !await confirmDialog({ title: 'Potongan gabungan berlebih', message: `Potongan gabungan melebihi sisa yang belum tertutup sebesar <b>${rp(gd.over)}</b>. Tetap simpan?`, okText: 'Tetap simpan' })) return;
+    const lebih = alokasi.filter((a) => a.nominal + a.diskon + a.diskon_gab > sisaNow(a.id_acara) + 0.5);
     if (lebih.length && !await confirmDialog({ title: 'Alokasi melebihi sisa tagihan', message: `Alokasi untuk <b>${lebih.map((a) => esc(App.acara(a.id_acara).nama_acara)).join(', ')}</b> melebihi sisa tagihannya (lebih bayar/uang muka). Tetap simpan?`, okText: 'Tetap simpan' })) return;
     let fileBukti = null, fileNota = null;
     try {
@@ -1196,7 +1343,7 @@ function openBayarForm(opt = {}) {
     setBusy(btn, false);
     const data = {
       id_pembayaran: edit ? edit.id_pembayaran : '', id_vendor: PM.vendor, tanggal_bayar: $('#pm-tgl').value, metode: segVal(m, 'pm-metode'),
-      nominal_total: nominal, tampilkan_ke_vendor: $('#pm-show').checked, nota_diteruskan: $('#pm-fwd').checked,
+      nominal_total: nominal, diskon_total: gd.G || 0, tampilkan_ke_vendor: $('#pm-show').checked, nota_diteruskan: $('#pm-fwd').checked,
       tanggal_nota_diteruskan: edit && edit.nota_diteruskan ? edit.tanggal_nota_diteruskan : '', catatan: $('#pm-cat').value
     };
     await App.write('savePembayaran', { data, alokasi, fileBukti, fileNota }, { btn, busyText: 'Menyimpan & mengunggah...' });
