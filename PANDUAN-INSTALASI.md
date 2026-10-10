@@ -112,7 +112,7 @@ Jika tampilan belum berubah, tekan **Ctrl+Shift+R**.
 
 ---
 
-## E. FITUR TAMBAHAN (versi 1.1 – 1.5)
+## E. FITUR TAMBAHAN (versi 1.1 – 1.6)
 
 ### E1. Import katalog dari Excel
 1. Buka **Katalog Barang**, lalu klik **Import Excel** → **Template Excel**.
@@ -182,7 +182,32 @@ Klik label warna di atas daftar (mis. *Belum setor 3*) untuk menyaring. Klik sek
 - Pembayaran boleh bernilai Rp 0 jika isinya hanya potongan.
 - Potongan tampil di Riwayat Pembayaran, tabel per vendor, detail acara, dan portal vendor. Tanda 🔒 *gab.* berarti potongan gabungan yang hanya terlihat oleh Admin.
 
-### E6. Cara memperbarui aplikasi yang sudah terpasang
+### E6. Bayar sesuai tanggungan, nota per pembayaran, foto per barang (v1.6)
+**Tombol "Sesuai tanggungan" di Catat Pembayaran Vendor**
+- Setiap baris acara punya tombol ⚡ **Sesuai tanggungan Rp …**.
+- Klik tombol pada acara-acara yang ingin dibayar. Kolom Bayar terisi sebesar sisa tagihan acara itu, dan **nominal total terjumlah otomatis**.
+- Klik sekali lagi untuk membatalkan pilihan.
+- Tulisan hijau **Setoran tersedia Rp …** menandai acara yang setoran panitianya sudah masuk tetapi belum disalurkan ke vendor.
+
+**Nota PDF per pembayaran**
+- Ada tombol **Nota** di Riwayat Pembayaran, di tab Pembayaran pada detail acara, dan di halaman **Bukti Bayar** portal vendor.
+- Isinya: vendor, tanggal & metode bayar, daftar **acara yang dibayar** (total sewa, uang yang dibayar pada nota itu, potongan, dan status terkini), lalu **rincian barang yang disewa** per acara secara ringkas.
+- Nota ini cocok diberikan ke admin/owner vendor agar mereka tahu acara mana saja yang sudah dibayar. Harga estimasi tidak pernah dicantumkan.
+- Vendor hanya dapat mengunduh nota pembayaran miliknya sendiri.
+
+**Foto pemasangan per barang** (Admin & Vendor)
+- Setiap barang punya tombol 📷 **Foto**:
+  - Admin: kolom *Foto* di tab Barang pada detail acara dan di menu Pesanan Barang.
+  - Vendor: tombol 📷 di samping tiap barang.
+- Di galeri foto: unggah beberapa foto sekaligus, ketuk foto untuk memperbesar, dan ketuk 🗑 untuk menghapus. Foto yang salah bisa dihapus lalu diganti.
+- Vendor hanya melihat dan menghapus foto pada barang miliknya.
+- Foto umum per acara tetap ada lewat tombol **Foto** pada kartu acara (vendor) atau **Foto Pemasangan** di detail acara (admin).
+
+**Vendor dapat mengubah status pasang sendiri**
+- Pilihannya: **Belum → Penataan → Terpasang → Dibongkar**.
+- Ubah langsung dari pilihan di samping tiap barang, atau gunakan **Ubah Status Serentak & Foto** untuk banyak barang sekaligus. Tersedia tombol *Semua terpasang* dan *Semua dibongkar*.
+
+### E7. Cara memperbarui aplikasi yang sudah terpasang
 1. **Backend:** buka editor Apps Script, ganti seluruh isi `Kode.gs` dengan versi baru, lalu simpan.
    Setelah itu buka **Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy**.
    Jangan jalankan `setupAppEnvironment` lagi. URL tetap sama.
@@ -190,7 +215,7 @@ Klik label warna di atas daftar (mis. *Belum setor 3*) untuk menyaring. Klik sek
    Setelah itu jalankan:
    ```bash
    git add .
-   git commit -m "Update v1.5"
+   git commit -m "Update v1.6"
    git push
    ```
 

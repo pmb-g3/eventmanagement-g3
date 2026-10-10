@@ -768,3 +768,29 @@ img { max-width: 100%; }
   .alloc-row.alloc5 { grid-template-columns: 1fr 1fr; }
   .disc-grid { grid-template-columns: 1fr; }
 }
+
+/* ===== v1.6 — Galeri foto per barang ===== */
+.foto-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.foto-item { position: relative; margin: 0; background: var(--card-2); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; animation: peDrop .2s var(--ease); }
+.foto-img { display: grid; place-items: center; width: 100%; aspect-ratio: 4 / 3; border: 0; padding: 0; cursor: zoom-in; background: var(--th-bg) center / cover no-repeat; color: var(--text-3); }
+.foto-load { animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
+.foto-item figcaption { padding: 7px 9px 8px; min-width: 0; }
+.foto-del { position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; border-radius: 50%; border: 0; background: rgba(15, 23, 42, .72); color: #fff; display: grid; place-items: center; cursor: pointer; transition: background .2s, transform .2s; }
+.foto-del:hover { background: #DC2626; transform: scale(1.06); }
+.foto-empty { display: flex; gap: 14px; align-items: center; padding: 18px; border: 1px dashed var(--border-2); border-radius: 14px; color: var(--text-3); }
+.foto-btn { white-space: nowrap; }
+.v-item-acts { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+.v-item-acts .select { width: auto; min-width: 118px; }
+@media (max-width: 768px) {
+  .foto-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .item-row.v-item { flex-wrap: wrap; }
+  .item-row.v-item .v-item-acts { width: 100%; justify-content: flex-end; }
+}
+.v-st.st-Belum { border-color: var(--bad-bd); color: var(--bad-tx); background-color: var(--bad-bg); }
+.v-st.st-Penataan { border-color: var(--warn-bd); color: var(--warn-tx); background-color: var(--warn-bg); }
+.v-st.st-Terpasang { border-color: var(--ok-bd); color: var(--ok-tx); background-color: var(--ok-bg); }
+.v-st.st-Dibongkar { color: var(--text-2); }
+.pm-full { margin-top: 6px; width: 100%; justify-content: center; }
+.pm-full.on { background: var(--ok-bg); color: var(--ok-tx); border-color: var(--ok-bd); }
+.pm-dana { margin-top: 3px; }

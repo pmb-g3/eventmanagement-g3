@@ -2,8 +2,8 @@
  *  APP.JS — inti aplikasi: login, sesi, router, kerangka tampilan
  * ===================================================================== */
 
-const FRONTEND_VERSION = '1.5.0'; // harus sama dengan <meta name="app-version"> di index.html
-const MIN_BACKEND = '1.5.0'; // versi Kode.gs minimal untuk frontend ini
+const FRONTEND_VERSION = '1.6.0'; // harus sama dengan <meta name="app-version"> di index.html
+const MIN_BACKEND = '1.6.0'; // versi Kode.gs minimal untuk frontend ini
 
 const ADMIN_NAV = [
   { r: 'beranda', label: 'Beranda & Pengingat', short: 'Beranda', icon: 'home', badge: () => App.reminderCount() },

@@ -3,6 +3,7 @@
  * ===================================================================== */
 
 const VendorState = { filter: 'aktif', q: '' };
+const STATUS_PASANG_V = ['Belum', 'Penataan', 'Terpasang', 'Dibongkar'];
 
 function vData() {
   const d = App.data;
@@ -43,15 +44,13 @@ function vendorCard(e, i) {
     ${items.length ? `<div>
       <div class="row between" style="margin-bottom:8px"><b style="font-family:var(--font-head);font-size:13.5px">Progres Unit Terpasang</b>${badge(av.terpasang + ' dari ' + items.length + ' terpasang', pct === 100 ? 'b-ok' : 'b-info')}</div>
       <div class="progress" style="margin-bottom:10px"><span style="width:${pct}%"></span></div>
-      ${items.map((p) => `<div class="item-row">${stIc(p.status_pasang)}<div class="grow" style="min-width:0"><div class="bold small">${esc(p.nama_barang)}</div>
+      ${items.map((p) => `<div class="item-row v-item">${stIc(p.status_pasang)}<div class="grow" style="min-width:0"><div class="bold small">${esc(p.nama_barang)}</div>
         <div class="xs muted">${p.spek ? 'Spek ' + esc(spekText(p)) + ' • ' : ''}${fmtQty(p.jumlah)} ${esc(p.satuan)}${hariText(p) ? ' • ' + esc(hariText(p)) : ''} • ${rp(p.harga_vendor_satuan)}/${esc(p.satuan)}${p.tanggal_pasang ? ' • pasang ' + tgl(p.tanggal_pasang) : ''}</div></div>
-        ${p.status_pasang === 'Belum' || p.status_pasang === 'Penataan'
-          ? `<button class="btn btn-mint btn-xs" data-act="v-quick" data-id="${esc(p.id_pesanan)}">${ic('check', 13)} Terpasang</button>`
-          : badge(p.status_pasang === 'Dibongkar' ? 'Dibongkar' : 'Sudah Terpasang', p.status_pasang === 'Dibongkar' ? 'b-neu' : 'b-ok')}</div>`).join('')}
+        <div class="v-item-acts">${FotoBarang.btn(p)}<select class="select sm v-st st-${esc(p.status_pasang)}" data-vstatus="${esc(p.id_pesanan)}" aria-label="Status pasang ${esc(p.nama_barang)}">${selectOpts(STATUS_PASANG_V, p.status_pasang)}</select></div></div>`).join('')}
     </div>` : ''}
     <div class="row wrap" style="gap:8px">
-      ${items.some((p) => p.status_pasang !== 'Dibongkar') ? `<button class="btn btn-primary grow" data-act="v-tandai" data-id="${esc(a.id_acara)}">${ic('camera', 16)} Tandai Terpasang & Unggah Foto</button>` : ''}
-      ${fotos.length ? `<button class="btn btn-soft" data-act="v-foto" data-id="${esc(a.id_acara)}">${ic('image', 16)} ${fotos.length} Foto</button>` : ''}
+      ${items.length ? `<button class="btn btn-primary grow" data-act="v-tandai" data-id="${esc(a.id_acara)}">${ic('layers', 16)} Ubah Status Serentak & Foto</button>` : ''}
+      <button class="btn btn-soft" data-act="v-foto" data-id="${esc(a.id_acara)}">${ic('image', 16)} ${fotos.length ? fotos.length + ' Foto' : 'Foto'}</button>
     </div>
   </div>`;
 }
@@ -126,7 +125,8 @@ const VendorViews = {
           const al = d.alokasi.filter((a) => a.id_pembayaran === p.id_pembayaran);
           return `<div class="card pad-sm" style="--i:${Math.min(i, 8)}"><div class="row between wrap" style="gap:12px">
             <div class="row" style="gap:12px"><span class="li-ic mint">${ic(p.metode === 'Transfer' ? 'send' : 'wallet', 18)}</span><div><div class="bold tnum" style="font-family:var(--font-head);font-size:17px">${rp(p.nominal_total)}</div><div class="small muted">${tglPanjang(p.tanggal_bayar)} • ${esc(p.metode)}${num(p.diskon_total) > 0 ? ' • potongan gabungan ' + rp(num(p.diskon_total)) : ''}</div></div></div>
-            ${p.id_berkas_bukti ? `<button class="btn btn-primary btn-sm" data-act="open-file" data-id="${esc(p.id_berkas_bukti)}" data-title="Bukti Transfer ${tgl(p.tanggal_bayar)}">${ic('eye', 15)} Lihat Bukti Transfer</button>` : `<span class="small muted">${p.metode === 'Tunai' ? 'Pembayaran tunai' : 'Bukti tidak ditampilkan'}</span>`}</div>
+            <div class="row wrap" style="gap:6px">${p.id_berkas_bukti ? `<button class="btn btn-primary btn-sm" data-act="open-file" data-id="${esc(p.id_berkas_bukti)}" data-title="Bukti Transfer ${tgl(p.tanggal_bayar)}">${ic('eye', 15)} Lihat Bukti Transfer</button>` : `<span class="small muted">${p.metode === 'Tunai' ? 'Pembayaran tunai' : 'Bukti tidak ditampilkan'}</span>`}
+            <button class="btn btn-soft btn-sm" data-act="nota-bayar" data-id="${esc(p.id_pembayaran)}">${ic('printer', 15)} Nota PDF</button></div></div>
             <div class="divider" style="margin:12px 0"></div>
             <div class="stack" style="gap:6px">${al.map((a) => `<div class="row between small"><span>${ic('calendar', 13)} ${esc(App.acara(a.id_acara).nama_acara)}</span><b class="tnum">${rp(a.nominal)}${num(a.diskon) + num(a.diskon_gab) > 0 ? ` <span class="xs muted" style="font-weight:500">+ potongan ${rp(num(a.diskon) + num(a.diskon_gab))}</span>` : ''}</b></div>`).join('')}</div></div>`;
         }).join('') : `<div class="card">${emptyState('Belum ada pembayaran', 'Pembayaran dari pondok akan tercatat di sini.', 'receipt')}</div>`}
@@ -178,44 +178,48 @@ ACT['v-pw'] = async (el) => {
   if (res.success) { const a = document.getElementById('vp-old'); if (a) a.value = ''; }
 };
 
-/* Tandai cepat satu barang (Optimistic UI: tampil dulu, simpan di latar) */
-ACT['v-quick'] = async (el) => {
-  const p = App.data.pesanan.find((x) => x.id_pesanan === el.dataset.id);
-  if (!p) return;
-  const old = p.status_pasang;
-  p.status_pasang = 'Terpasang';
+/* Ubah status satu barang dari daftar (Optimistic UI: tampil dulu, simpan di latar) */
+const isPasang = (st) => st === 'Terpasang' || st === 'Dibongkar';
+document.addEventListener('change', async (e) => {
+  const sel = e.target.closest('[data-vstatus]');
+  if (!sel || App.isAdmin) return;
+  const p = App.data.pesanan.find((x) => x.id_pesanan === sel.dataset.vstatus);
+  if (!p || sel.value === p.status_pasang) return;
+  const old = p.status_pasang, nv = sel.value;
   const av = App.data.fin.av.find((x) => x.id_acara === p.id_acara);
-  if (av) av.terpasang++;
+  const adj = (from, to) => { if (av) av.terpasang += (isPasang(to) ? 1 : 0) - (isPasang(from) ? 1 : 0); };
+  p.status_pasang = nv; adj(old, nv);
   App.renderView(false);
-  toast('"' + p.nama_barang + '" ditandai terpasang.', 'success', 2000);
-  const res = await API.call('setStatusPasang', { ids: [p.id_pesanan], status: 'Terpasang' });
+  toast('"' + p.nama_barang + '" → ' + nv, 'success', 2000);
+  const res = await API.call('setStatusPasang', { ids: [p.id_pesanan], status: nv });
   if (res.success) { App.setData(res.data); App.renderView(false); }
   else if (res.code !== 'AUTH') {
-    p.status_pasang = old; if (av) av.terpasang--; App.renderView(false);
+    p.status_pasang = old; adj(nv, old); App.renderView(false);
     toast('Gagal menyimpan: ' + res.message, 'error', 5000);
   }
-};
+});
+ACT['foto-barang'] = (el) => FotoBarang.open({ id_pesanan: el.dataset.id });
 
 /* Modal tandai banyak barang + unggah foto */
 ACT['v-tandai'] = (el) => {
   const ida = el.dataset.id;
   const a = App.acara(ida);
-  const items = App.data.pesanan.filter((p) => p.id_acara === ida && p.status_pasang !== 'Dibongkar');
+  const items = App.data.pesanan.filter((p) => p.id_acara === ida);
   const fotos = [];
   const m = Modal.open({
-    title: 'Tandai Terpasang & Foto Lapangan', sub: esc(a.nama_acara), size: 'lg',
-    body: `<div class="row between" style="margin-bottom:10px"><span class="small muted">Atur status tiap barang.</span><button class="btn btn-mint btn-sm" type="button" id="vt-all">${ic('checkCircle', 15)} Tandai semua terpasang</button></div>
+    title: 'Ubah Status Pasang & Foto Lapangan', sub: esc(a.nama_acara), size: 'lg',
+    body: `<div class="row between wrap" style="margin-bottom:10px;gap:8px"><span class="small muted">Atur status tiap barang: Belum → Penataan → Terpasang → Dibongkar.</span><span class="row" style="gap:6px"><button class="btn btn-mint btn-sm" type="button" data-all="Terpasang">${ic('checkCircle', 15)} Semua terpasang</button><button class="btn btn-soft btn-sm" type="button" data-all="Dibongkar">${ic('box', 15)} Semua dibongkar</button></span></div>
       <div class="stack" style="gap:8px">${items.map((p) => `<div class="item-row" style="flex-wrap:wrap"><div class="grow" style="min-width:180px"><div class="bold small">${esc(p.nama_barang)}</div><div class="xs muted">${p.spek ? esc(spekText(p)) + ' • ' : ''}${fmtQty(p.jumlah)} ${esc(p.satuan)}${p.lokasi ? ' • ' + esc(p.lokasi) : ''}</div></div>
-        <div style="width:290px;max-width:100%">${seg('vt-' + p.id_pesanan, ['Belum', 'Penataan', 'Terpasang'], p.status_pasang, 'sm')}</div></div>`).join('')}</div>
-      <div class="field section" style="margin-top:18px"><label>Foto pemasangan (opsional, bisa lebih dari satu)</label>
+        <div style="width:380px;max-width:100%">${seg('vt-' + p.id_pesanan, STATUS_PASANG_V, p.status_pasang, 'sm')}</div></div>`).join('')}</div>
+      <div class="field section" style="margin-top:18px"><label>Foto umum acara (opsional) — foto per barang lewat tombol ${ic('camera', 12)} Foto di tiap barang</label>
         <label class="upload"><span class="u-ic">${ic('camera', 20)}</span><span class="grow"><span class="u-t">Ambil / pilih foto</span><br><span class="u-s">Maks. 8 foto • dikompres otomatis</span></span><input type="file" id="vt-foto" accept="image/*" multiple></label>
         <div class="thumbs" id="vt-thumbs"></div></div>`,
     foot: `<button class="btn btn-ghost" data-modal-close>Batal</button><button class="btn btn-primary" id="vt-save">${ic('check', 16)} Simpan</button>`
   });
   const $ = (q) => m.querySelector(q);
-  $('#vt-all').addEventListener('click', () => {
-    m.querySelectorAll('[data-seg^="vt-"] button').forEach((b) => b.classList.toggle('on', b.dataset.v === 'Terpasang'));
-  });
+  m.querySelectorAll('[data-all]').forEach((btn) => btn.addEventListener('click', () => {
+    m.querySelectorAll('[data-seg^="vt-"] button').forEach((b) => b.classList.toggle('on', b.dataset.v === btn.dataset.all));
+  }));
   const drawThumbs = () => {
     $('#vt-thumbs').innerHTML = fotos.map((f, i) => `<div class="t" style="background-image:url('${f.preview}')"><button type="button" data-rm="${i}" aria-label="Hapus foto">${ic('x', 12)}</button></div>`).join('');
   };
@@ -253,11 +257,4 @@ ACT['v-tandai'] = (el) => {
   });
 };
 
-ACT['v-foto'] = (el) => {
-  const ida = el.dataset.id;
-  const fotos = App.data.berkas.filter((b) => b.id_acara === ida);
-  Modal.open({
-    title: 'Foto Pemasangan', sub: esc(App.acara(ida).nama_acara), size: 'sm',
-    body: `<div class="list">${fotos.map((f) => `<div class="li"><span class="li-ic mint">${ic('image', 18)}</span><div class="grow" style="min-width:0"><div class="small bold ellipsis">${esc(f.nama_file)}</div><div class="xs muted">${esc(f.tanggal)}</div></div>${fileLink(f.id_berkas, 'Lihat', 'Foto Pemasangan')}</div>`).join('')}</div>`
-  });
-};
+ACT['v-foto'] = (el) => FotoBarang.open({ id_acara: el.dataset.id });

@@ -1,3 +1,4 @@
+const ACT = {}; // registry aksi [data-act] (Admin & Vendor)
 /* =====================================================================
  *  UI.JS — ikon, format, komponen (modal, toast, tabel data, unggah)
  * ===================================================================== */
@@ -446,3 +447,133 @@ function showFile(file, title) {
     onClose: () => setTimeout(() => URL.revokeObjectURL(url), 60000)
   });
 }
+
+/* =====================================================================
+ *  FOTO PEMASANGAN PER BARANG (dipakai Admin & Vendor) — v1.6
+ * ===================================================================== */
+const FOTO_CACHE = new Map(); // id_berkas → dataURL
+const FotoBarang = {
+  /** Foto milik satu barang (id_pesanan) atau semua foto satu acara. */
+  list(o) {
+    return (App.data.berkas || []).filter((b) => b.jenis === 'Foto Pemasangan' && b.id_acara === o.id_acara && (!o.id_pesanan || b.id_ref === o.id_pesanan))
+      .sort((a, b) => String(b.tanggal).localeCompare(String(a.tanggal)));
+  },
+  count(idPesanan) { return (App.data.berkas || []).filter((b) => b.jenis === 'Foto Pemasangan' && b.id_ref === idPesanan).length; },
+  btn(p, cls = 'btn-soft') {
+    const n = this.count(p.id_pesanan);
+    return `<button class="btn ${n ? 'btn-mint' : cls} btn-xs foto-btn" type="button" data-act="foto-barang" data-id="${esc(p.id_pesanan)}" title="Foto pemasangan ${esc(p.nama_barang)}">${ic('camera', 13)} ${n ? n + ' foto' : 'Foto'}</button>`;
+  },
+  open(o) {
+    const d = App.data;
+    const p = o.id_pesanan ? d.pesanan.find((x) => x.id_pesanan === o.id_pesanan) : null;
+    if (o.id_pesanan && !p) return toast('Barang tidak ditemukan.', 'warn');
+    const ida = p ? p.id_acara : o.id_acara;
+    const a = App.acara(ida);
+    const st = { queue: [], busy: false };
+    const m = Modal.open({
+      title: p ? 'Foto Pemasangan Barang' : 'Foto Pemasangan Acara',
+      sub: esc(p ? p.nama_barang + (p.spek ? ' • ' + spekText(p) : '') + ' — ' + a.nama_acara : a.nama_acara), size: 'lg',
+      body: `<div id="fb-gal"></div>
+        <div class="field section" style="margin-top:16px"><label>Tambah foto ${p ? 'barang ini' : 'umum acara'} (bisa lebih dari satu)</label>
+          <label class="upload"><span class="u-ic">${ic('camera', 20)}</span><span class="grow"><span class="u-t">Ambil / pilih foto</span><br><span class="u-s">Maks. 8 foto sekali unggah • dikompres otomatis</span></span><input type="file" id="fb-file" accept="image/*" multiple></label>
+          <div class="thumbs" id="fb-queue"></div></div>`,
+      foot: `<button class="btn btn-ghost" data-modal-close>Tutup</button><button class="btn btn-primary" id="fb-up" disabled>${ic('upload', 16)} Unggah foto</button>`
+    });
+    const $ = (q) => m.querySelector(q);
+    const label = (b) => {
+      if (p) return '';
+      const it = b.id_ref && d.pesanan.find((x) => x.id_pesanan === b.id_ref);
+      return it ? esc(it.nama_barang) : 'Foto umum acara';
+    };
+    const drawGal = () => {
+      const fotos = this.list({ id_acara: ida, id_pesanan: p && p.id_pesanan });
+      $('#fb-gal').innerHTML = fotos.length ? `<div class="foto-grid">${fotos.map((b) => `
+        <figure class="foto-item" data-fid="${esc(b.id_berkas)}">
+          <button type="button" class="foto-img" data-view="${esc(b.id_berkas)}" aria-label="Lihat foto"${FOTO_CACHE.has(b.id_berkas) ? ` style="background-image:url('${FOTO_CACHE.get(b.id_berkas)}')"` : ''}>${FOTO_CACHE.has(b.id_berkas) ? '' : `<span class="foto-load">${ic('image', 22)}</span>`}</button>
+          <figcaption>${label(b) ? `<div class="xs bold ellipsis">${label(b)}</div>` : ''}<div class="xs muted ellipsis">${esc(b.tanggal || '')}${b.diunggah_oleh ? ' • ' + esc(b.diunggah_oleh) : ''}</div></figcaption>
+          <button type="button" class="foto-del" data-del="${esc(b.id_berkas)}" aria-label="Hapus foto" title="Hapus foto">${ic('trash', 13)}</button>
+        </figure>`).join('')}</div>`
+        : `<div class="foto-empty">${ic('camera', 26)}<div><b>Belum ada foto.</b><div class="small muted">Unggah foto setelah barang terpasang sebagai bukti pemasangan.</div></div></div>`;
+      loadThumbs(fotos);
+    };
+    const loadThumbs = async (fotos) => {
+      for (const b of fotos) {
+        if (FOTO_CACHE.has(b.id_berkas) || !m.isConnected) continue;
+        const res = await API.call('getFile', { id_berkas: b.id_berkas });
+        if (!res.success || !res.file || res.file.tooLarge || !/^image\//.test(res.file.mime)) continue;
+        const url = 'data:' + res.file.mime + ';base64,' + res.file.base64;
+        FOTO_CACHE.set(b.id_berkas, url);
+        const el = m.querySelector(`[data-view="${CSS.escape(b.id_berkas)}"]`);
+        if (el) { el.style.backgroundImage = `url('${url}')`; el.innerHTML = ''; }
+      }
+    };
+    const drawQueue = () => {
+      $('#fb-queue').innerHTML = st.queue.map((f, i) => `<div class="t" style="background-image:url('${f.preview}')"><button type="button" data-rm="${i}" aria-label="Batal">${ic('x', 12)}</button></div>`).join('');
+      const b = $('#fb-up'); b.disabled = !st.queue.length;
+      b.innerHTML = ic('upload', 16) + (st.queue.length ? ` Unggah ${st.queue.length} foto` : ' Unggah foto');
+    };
+    const after = (res) => {
+      if (res.data) App.setData(res.data);
+      App.renderView(false);
+      drawGal();
+    };
+    $('#fb-file').addEventListener('change', async (e) => {
+      const files = [...e.target.files].slice(0, 8 - st.queue.length);
+      for (const f of files) { try { st.queue.push(await prepareFile(f)); } catch (err) { toast(err.message, 'error'); } }
+      e.target.value = '';
+      drawQueue();
+    });
+    $('#fb-queue').addEventListener('click', (e) => { const b = e.target.closest('[data-rm]'); if (b) { st.queue.splice(Number(b.dataset.rm), 1); drawQueue(); } });
+    $('#fb-gal').addEventListener('click', async (e) => {
+      const v = e.target.closest('[data-view]');
+      if (v) {
+        const id = v.dataset.view;
+        if (FOTO_CACHE.has(id)) { const u = FOTO_CACHE.get(id); showFile({ mime: u.slice(5, u.indexOf(';')), base64: u.split(',')[1] }, 'Foto Pemasangan'); }
+        else App.openFile(id, 'Foto Pemasangan', v);
+        return;
+      }
+      const del = e.target.closest('[data-del]');
+      if (!del) return;
+      if (!await confirmDialog({ title: 'Hapus foto?', message: 'Foto ini akan dihapus permanen dari sistem.', okText: 'Hapus', danger: true })) return;
+      setBusy(del, true, '');
+      const res = await API.call('deleteFoto', { id_berkas: del.dataset.del });
+      if (!res.success) { setBusy(del, false); return toast(res.message, 'error', 5000); }
+      FOTO_CACHE.delete(del.dataset.del);
+      toast('Foto dihapus.', 'success', 2000);
+      after(res);
+    });
+    $('#fb-up').addEventListener('click', async (e) => {
+      if (!st.queue.length) return;
+      const btn = e.currentTarget;
+      setBusy(btn, true, 'Mengunggah ' + st.queue.length + ' foto...');
+      const payload = { id_acara: ida, files: st.queue.map((f) => ({ name: f.name, mime: f.mime, base64: f.base64 })) };
+      if (p) payload.id_pesanan = p.id_pesanan;
+      const res = await API.call('uploadFoto', payload, { timeout: 180000 });
+      setBusy(btn, false);
+      if (!res.success) return toast(res.message, 'error', 5000);
+      const n = st.queue.length;
+      // simpan pratinjau agar foto baru langsung tampil tanpa unduh ulang
+      const before = new Set((App.data.berkas || []).map((b) => b.id_berkas));
+      const prev = st.queue.map((f) => f.preview);
+      st.queue.splice(0);
+      drawQueue();
+      if (res.data) {
+        const baru = (res.data.berkas || []).filter((b) => !before.has(b.id_berkas) && b.jenis === 'Foto Pemasangan');
+        baru.forEach((b, i) => { if (prev[i]) FOTO_CACHE.set(b.id_berkas, prev[i]); });
+      }
+      toast(n + ' foto terunggah.', 'success', 2200);
+      after(res);
+    });
+    drawGal();
+    drawQueue();
+  }
+};
+
+/* Nota pembayaran per transaksi (Admin & Vendor) — v1.6 */
+ACT['nota-bayar'] = async (el) => {
+  setBusy(el, true, 'PDF...');
+  const res = await API.call('notaPembayaran', { id_pembayaran: el.dataset.id }, { timeout: 120000 });
+  setBusy(el, false);
+  if (!res.success) return toast(res.message, 'error', 5000);
+  showFile(res.file, 'Nota Pembayaran Vendor');
+};

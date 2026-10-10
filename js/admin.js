@@ -2,7 +2,7 @@
  *  ADMIN.JS — seluruh halaman & formulir untuk peran Admin
  * ===================================================================== */
 
-const ACT = {};
+// ACT (registry aksi data-act) dideklarasikan di ui.js
 const STATUS_ACARA = ['Rencana', 'Estimasi Dikirim', 'Disetujui', 'Dipesan', 'Terpasang', 'Dibongkar', 'Selesai', 'Batal'];
 const STATUS_PASANG = ['Belum', 'Penataan', 'Terpasang', 'Dibongkar'];
 const KATEGORI = ['Tenda & Terop', 'Panggung', 'Rigging & Truss', 'Sound & Lighting', 'Kursi & Meja', 'Karpet & Permadani',
@@ -520,6 +520,7 @@ const AcaraDetail = {
         <button class="btn btn-soft btn-sm" data-act="new-bayar" data-acara="${esc(id)}">${ic('wallet', 15)} Catat Bayar</button>
         <button class="btn btn-soft btn-sm" data-act="new-setoran" data-acara="${esc(id)}">${ic('coins', 15)} Catat Setoran</button>
         <button class="btn btn-soft btn-sm" data-act="new-konsumsi" data-acara="${esc(id)}">${ic('utensils', 15)} Konsumsi</button>
+        <button class="btn btn-soft btn-sm" data-act="v-foto" data-id="${esc(id)}">${ic('camera', 15)} Foto Pemasangan${FotoBarang.list({ id_acara: id }).length ? ' (' + FotoBarang.list({ id_acara: id }).length + ')' : ''}</button>
         ${x.kekurangan > 0 && a.kontak_panitia ? waBtn(a.kontak_panitia, tagihSetoranText(id), 'Tagih Panitia') : ''}
         <span class="grow"></span>
         <button class="btn btn-ghost btn-sm" data-act="edit-acara" data-id="${esc(id)}">${ic('edit', 15)} Edit</button>
@@ -562,7 +563,8 @@ const AcaraDetail = {
           { key: 'harga_vendor_satuan', label: 'Harga Vendor', align: 'r', render: (r) => `<span class="tnum">${rp(r.harga_vendor_satuan)}</span><div class="xs muted tnum">est. ${rp(r.harga_estimasi_satuan)}</div>` },
           { key: 'sub', label: 'Subtotal Riil', align: 'r', sortVal: (r) => subRiil(r), render: (r) => `<b class="tnum">${rp(subRiil(r))}</b>${hariText(r) ? `<div class="xs muted">${esc(hariText(r))}</div>` : ''}` },
           { key: 'tanggal_pasang', label: 'Jadwal', render: (r) => `<span class="small">${r.tanggal_pasang ? tgl(r.tanggal_pasang) : '-'} → ${r.tanggal_bongkar ? tgl(r.tanggal_bongkar) : '-'}</span>` },
-          { key: 'status_pasang', label: 'Status Pasang', render: (r) => `<select class="select sm" style="width:auto;min-width:120px" data-change="status-pesanan" data-id="${esc(r.id_pesanan)}">${selectOpts(STATUS_PASANG, r.status_pasang)}</select>${r.ditandai_oleh ? `<div class="xs muted">oleh ${esc(r.ditandai_oleh)}</div>` : ''}` }
+          { key: 'status_pasang', label: 'Status Pasang', render: (r) => `<select class="select sm" style="width:auto;min-width:120px" data-change="status-pesanan" data-id="${esc(r.id_pesanan)}">${selectOpts(STATUS_PASANG, r.status_pasang)}</select>${r.ditandai_oleh ? `<div class="xs muted">oleh ${esc(r.ditandai_oleh)}</div>` : ''}` },
+          { key: 'foto', label: 'Foto', sort: false, sortVal: (r) => FotoBarang.count(r.id_pesanan), render: (r) => FotoBarang.btn(r) }
         ]
       });
     }
@@ -608,7 +610,7 @@ const AcaraDetail = {
           { key: 'porsi', label: 'Porsi Acara Ini', align: 'r', render: (r) => `<b class="tnum">${rp(r.porsi)}</b>${r.nominal_total !== r.porsi ? `<div class="xs muted">dari total ${rp(r.nominal_total)}</div>` : ''}${potText(r.pot, r.gab)}` },
           { key: 'bukti', label: 'Bukti & Nota', sort: false, render: (r) => `<div class="row" style="justify-content:inherit;gap:6px">${fileLink(r.id_berkas_bukti, 'Bukti', 'Bukti Transfer')}${fileLink(r.id_berkas_nota, 'Nota', 'Nota Vendor')}</div>` },
           { key: 'nota_diteruskan', label: 'Nota ke Panitia', render: (r) => r.nota_diteruskan ? badge('Diteruskan ' + tgl(r.tanggal_nota_diteruskan), 'b-ok') : badge('Belum', 'b-warn') },
-          { key: '', label: '', acts: true, sort: false, render: (r) => `<div class="acts"><button class="btn btn-ghost btn-sm" data-act="edit-bayar" data-id="${r.id_pembayaran}">${ic('edit', 14)}</button></div>` }
+          { key: '', label: '', acts: true, sort: false, render: (r) => `<div class="acts"><button class="btn btn-soft btn-sm" data-act="nota-bayar" data-id="${r.id_pembayaran}" title="Nota pembayaran (PDF)">${ic('printer', 14)} Nota</button><button class="btn btn-ghost btn-sm" data-act="edit-bayar" data-id="${r.id_pembayaran}">${ic('edit', 14)}</button></div>` }
         ]
       });
     }
@@ -1076,7 +1078,8 @@ AdminViews.pesanan = {
           { key: 'sub', label: 'Subtotal', align: 'r', sortVal: (r) => subRiil(r), render: (r) => `<b class="tnum">${rp(subRiil(r))}</b>${hariText(r) ? `<div class="xs muted">${esc(hariText(r))}</div>` : ''}` },
           { key: 'tanggal_pasang', label: 'Pasang', render: (r) => `<span class="small">${tgl(r.tanggal_pasang)}</span>` },
           { key: 'tanggal_bongkar', label: 'Bongkar', render: (r) => `<span class="small">${tgl(r.tanggal_bongkar)}</span>` },
-          { key: 'status_pasang', label: 'Status', render: (r) => `<select class="select sm" style="width:auto;min-width:118px" data-change="status-pesanan" data-id="${esc(r.id_pesanan)}">${selectOpts(STATUS_PASANG, r.status_pasang)}</select>` }
+          { key: 'status_pasang', label: 'Status', render: (r) => `<select class="select sm" style="width:auto;min-width:118px" data-change="status-pesanan" data-id="${esc(r.id_pesanan)}">${selectOpts(STATUS_PASANG, r.status_pasang)}</select>` },
+          { key: 'foto', label: 'Foto', sort: false, render: (r) => FotoBarang.btn(r) }
         ]
       })}
     </div>`;
@@ -1119,7 +1122,7 @@ AdminViews.pembayaran = {
           { key: 'alokasi', label: 'Dialokasikan ke', sort: false, render: (r) => `<div class="stack" style="gap:2px;align-items:inherit">${d.alokasi.filter((a) => a.id_pembayaran === r.id_pembayaran).map((a) => `<span class="small"><a href="#/acara/${encodeURIComponent(a.id_acara)}">${esc(App.acara(a.id_acara).nama_acara)}</a> <span class="muted tnum">${rp(a.nominal)}</span>${num(a.diskon) > 0 ? ` <span class="xs tx-ok">−pot ${rp(a.diskon)}</span>` : ''}${num(a.diskon_gab) > 0 ? ` <span class="xs muted" title="Bagian potongan gabungan (hanya Admin)">${ic('lock', 10)} ${rp(a.diskon_gab)}</span>` : ''}</span>`).join('')}</div>` },
           { key: 'berkas', label: 'Bukti & Nota', sort: false, render: (r) => `<div class="row" style="gap:6px;justify-content:inherit">${fileLink(r.id_berkas_bukti, 'Bukti', 'Bukti Transfer')}${fileLink(r.id_berkas_nota, 'Nota', 'Nota Vendor')}</div>${r.id_berkas_bukti ? `<div class="xs ${r.tampilkan_ke_vendor ? 'tx-ok' : 'muted'}" style="margin-top:3px">${r.tampilkan_ke_vendor ? '● tampil ke vendor' : '○ tersembunyi dari vendor'}</div>` : ''}` },
           { key: 'nota_diteruskan', label: 'Nota → Panitia', render: (r) => `<button class="btn btn-xs ${r.nota_diteruskan ? 'btn-mint' : 'btn-soft'}" data-act="nota-toggle" data-id="${r.id_pembayaran}" data-v="${r.nota_diteruskan ? '0' : '1'}">${ic(r.nota_diteruskan ? 'checkCircle' : 'circle', 14)} ${r.nota_diteruskan ? 'Diteruskan ' + tgl(r.tanggal_nota_diteruskan) : 'Belum diteruskan'}</button>` },
-          { key: '', label: '', acts: true, sort: false, render: (r) => `<div class="acts"><button class="btn btn-ghost btn-sm" data-act="edit-bayar" data-id="${r.id_pembayaran}" aria-label="Edit">${ic('edit', 15)}</button><button class="btn btn-ghost btn-sm tx-bad" data-act="del-bayar" data-id="${r.id_pembayaran}" aria-label="Hapus">${ic('trash', 15)}</button></div>` }
+          { key: '', label: '', acts: true, sort: false, render: (r) => `<div class="acts"><button class="btn btn-soft btn-sm" data-act="nota-bayar" data-id="${r.id_pembayaran}" title="Nota pembayaran (PDF)">${ic('printer', 14)} Nota</button><button class="btn btn-ghost btn-sm" data-act="edit-bayar" data-id="${r.id_pembayaran}" aria-label="Edit">${ic('edit', 15)}</button><button class="btn btn-ghost btn-sm tx-bad" data-act="del-bayar" data-id="${r.id_pembayaran}" aria-label="Hapus">${ic('trash', 15)}</button></div>` }
         ]
       })}
     </div>`;
@@ -1250,7 +1253,9 @@ function openBayarForm(opt = {}) {
         const items = d.pesanan.filter((p) => p.id_acara === k && p.id_vendor === PM.vendor).map((p) => p.nama_barang);
         return `<div class="alloc-row alloc5"><div class="a-name"><div class="bold">${esc(a.nama_acara)}</div><div class="small muted ellipsis">${tgl(a.tanggal_mulai)}${items.length ? ' • ' + esc(items.slice(0, 3).join(', ')) + (items.length > 3 ? '…' : '') : ''}</div></div>
           <div class="right"><span class="ml">Sisa tagihan</span><b class="tnum">${rp(sisaNow(k))}</b></div>
-          <div><span class="ml">Bayar (uang)</span><div class="input-group"><span class="pre small">Rp</span><input class="input sm tnum money" data-alok="${esc(k)}" inputmode="numeric" value="${PM.alok[k] ? fmtNum(PM.alok[k]) : ''}" placeholder="0"></div></div>
+          <div><span class="ml">Bayar (uang)</span><div class="input-group"><span class="pre small">Rp</span><input class="input sm tnum money" data-alok="${esc(k)}" inputmode="numeric" value="${PM.alok[k] ? fmtNum(PM.alok[k]) : ''}" placeholder="0"></div>
+            <button type="button" class="btn btn-soft btn-xs pm-full" data-full="${esc(k)}" title="Isi bayar sebesar tanggungan acara ini">${ic('zap', 12)} <span>Sesuai tanggungan</span></button>
+            ${(App.finA(k).dana_positif || 0) > 0 ? `<div class="xs tx-ok pm-dana">${ic('coins', 11)} Setoran tersedia ${rp(App.finA(k).dana_positif)}</div>` : ''}</div>
           <div><span class="ml">Potongan acara (opsional)</span><div class="input-group"><span class="pre small">Rp</span><input class="input sm tnum money" data-pot="${esc(k)}" inputmode="numeric" value="${PM.pot[k] ? fmtNum(PM.pot[k]) : ''}" placeholder="0"></div></div>
           <div id="pm-st-${esc(k)}"></div></div>`;
       }).join('') : `<div style="padding:10px 0">${emptyState('Tidak ada tagihan tertunda untuk vendor ini', 'Tambahkan acara di bawah bila ini uang muka.', 'checkCircle')}</div>`;
@@ -1266,6 +1271,8 @@ function openBayarForm(opt = {}) {
     rowIds().forEach((k) => {
       const al = PM.alok[k] || 0, pt = PM.pot[k] || 0, g = PM.gab[k] || 0, s = sisaNow(k), cov = al + pt + g;
       tot += al; totPot += pt;
+      const fb = m.querySelector(`[data-full="${CSS.escape(k)}"]`);
+      if (fb) { const nd = Math.max(0, s - pt); fb.classList.toggle('on', al > 0 && al === nd); fb.querySelector('span').textContent = al > 0 && al === nd ? 'Dipilih ✓ ' + rp(nd) : 'Sesuai tanggungan ' + rp(nd); }
       const el = m.querySelector('#pm-st-' + CSS.escape(k));
       if (!el) return;
       el.innerHTML = '<span class="ml">Status baru</span>' + (cov <= 0 ? badge('Belum dialokasikan', 'b-neu')
@@ -1299,6 +1306,19 @@ function openBayarForm(opt = {}) {
     if (k !== undefined) PM.alok[k] = parseMoney(e.target.value);
     else if (kp !== undefined) PM.pot[kp] = parseMoney(e.target.value);
     else return;
+    update();
+  });
+  // Tombol "Sesuai tanggungan": isi bayar = sisa tagihan (dikurangi potongan acara) & jumlahkan ke nominal
+  const needOf = (k) => Math.max(0, sisaNow(k) - (PM.pot[k] || 0));
+  $('#pm-rows').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-full]');
+    if (!b) return;
+    const k = b.dataset.full, need = needOf(k);
+    if (!need) return toast('Acara ini tidak memiliki tanggungan.', 'info');
+    PM.alok[k] = PM.alok[k] === need ? 0 : need;
+    const inp = m.querySelector(`[data-alok="${CSS.escape(k)}"]`); if (inp) inp.value = PM.alok[k] ? fmtNum(PM.alok[k]) : '';
+    const tot = rowIds().reduce((s2, x) => s2 + (PM.alok[x] || 0), 0);
+    $('#pm-nominal').value = tot ? fmtNum(tot) : '';
     update();
   });
   $('#pm-addbtn').addEventListener('click', () => { const k = $('#pm-addsel').value; if (!k) return toast('Pilih acara dulu.', 'warn'); if (!PM.vendor) return toast('Pilih vendor dulu.', 'warn'); PM.extra.push(k); renderRows(); });
