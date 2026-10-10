@@ -2,8 +2,8 @@
  *  APP.JS — inti aplikasi: login, sesi, router, kerangka tampilan
  * ===================================================================== */
 
-const FRONTEND_VERSION = '1.6.0'; // harus sama dengan <meta name="app-version"> di index.html
-const MIN_BACKEND = '1.6.0'; // versi Kode.gs minimal untuk frontend ini
+const FRONTEND_VERSION = '1.7.0'; // harus sama dengan <meta name="app-version"> di index.html
+const MIN_BACKEND = '1.7.0'; // versi Kode.gs minimal untuk frontend ini
 
 const ADMIN_NAV = [
   { r: 'beranda', label: 'Beranda & Pengingat', short: 'Beranda', icon: 'home', badge: () => App.reminderCount() },
@@ -14,6 +14,7 @@ const ADMIN_NAV = [
   { r: 'katalog', label: 'Katalog Barang', short: 'Katalog', icon: 'tag' },
   { r: 'vendor', label: 'Vendor & Akun', short: 'Vendor', icon: 'store' },
   { r: 'dokumen', label: 'Dokumen & Rekap', short: 'Dokumen', icon: 'file' },
+  { r: 'wa', label: 'WhatsApp', short: 'WhatsApp', icon: 'chat' },
   { r: 'pengaturan', label: 'Pengaturan', short: 'Pengaturan', icon: 'settings' }
 ];
 const ADMIN_BOTTOM = ['beranda', 'acara', 'pembayaran', 'setoran'];
@@ -391,7 +392,7 @@ const App = {
       bell: () => this.go(this.isAdmin ? 'beranda' : 'acara'),
       forgot: () => toast(this.loginTab === 'admin' ? 'Admin: jalankan fungsi resetPasswordAdmin() di editor Apps Script.' : 'Hubungi Ustadz PJ. Vendor untuk reset kata sandi.', 'info', 6000),
       'pw-toggle': () => {
-        const inp = document.getElementById('lg-pass');
+        const g = el.closest('.input-group'); const inp = (g && g.querySelector('input')) || document.getElementById('lg-pass');
         inp.type = inp.type === 'password' ? 'text' : 'password';
         el.innerHTML = ic(inp.type === 'password' ? 'eyeOff' : 'eye', 18);
       },

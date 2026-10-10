@@ -79,6 +79,16 @@ const TPL_DEF = {
     key: 'tpl_akun_vendor', label: 'Kirim Akun ke Vendor', icon: 'user',
     def: "Assalamu'alaikum {pic}.\nBerikut akun Portal Vendor Event Management Gontor 3:\n• Alamat: {link}\n• Username: {username}\n• Kata sandi: {password}\nMohon dijaga kerahasiaannya. Jazakumullah khairan.",
     vars: { pic: 'Nama PIC vendor', vendor: 'Nama vendor', link: 'Alamat aplikasi', username: 'Username', password: 'Kata sandi', admin: 'Nama Admin' }
+  },
+  jadwal: {
+    key: 'tpl_jadwal_vendor', label: 'Jadwal Pasang/Bongkar ke Vendor', icon: 'truck',
+    def: "Assalamu'alaikum {pic}.\nMengingatkan jadwal *{kegiatan}* perlengkapan acara *{acara}* pada {tanggal} di {lokasi}.\nBarang:\n{daftar_barang}\nMohon konfirmasi kesiapan tim. Jazakumullah khairan.\n— {admin}",
+    vars: { pic: 'Nama PIC vendor', vendor: 'Nama vendor', acara: 'Nama acara', kegiatan: 'pemasangan / pembongkaran', tanggal: 'Hari & tanggal', lokasi: 'Lokasi', daftar_barang: 'Daftar barang (satu per baris)', admin: 'Nama Admin' }
+  },
+  bayar: {
+    key: 'tpl_bayar_vendor', label: 'Pemberitahuan Pembayaran ke Vendor', icon: 'wallet',
+    def: "Assalamu'alaikum {pic}.\nAlhamdulillah, pembayaran untuk {vendor} telah kami lakukan:\n• Tanggal: {tanggal_bayar}\n• Metode: {metode}\n• Nominal: *{nominal}*\nRincian:\n{daftar_acara}\nBukti transfer & rincian dapat dilihat di Portal Vendor. Jazakumullah khairan.\n— {admin}",
+    vars: { pic: 'Nama PIC vendor', vendor: 'Nama vendor', tanggal_bayar: 'Tanggal bayar', metode: 'Transfer / Tunai', nominal: 'Nominal dibayar', potongan: 'Total potongan', daftar_acara: 'Daftar acara & nominal', sisa_tagihan: 'Sisa tagihan vendor setelah bayar', admin: 'Nama Admin' }
   }
 };
 function getTpl(type) { const t = TPL_DEF[type]; return (D().settings[t.key] || t.def); }
@@ -102,7 +112,45 @@ function varsAkun(c) {
   const v = App.maps.vendor[c.id_vendor] || {};
   return { pic: v.pic || '', vendor: v.nama_vendor || '', link: location.href.split('#')[0], username: c.username, password: c.password, admin: D().settings.nama_admin };
 }
+/** Barang vendor pada satu acara untuk tahap Pasang/Bongkar. */
+function jadwalInfo(ida, idv, tahap) {
+  const items = D().pesanan.filter((p) => p.id_acara === ida && p.id_vendor === idv);
+  const a = App.acara(ida);
+  if (!tahap) tahap = items.some((p) => p.status_pasang === 'Belum' || p.status_pasang === 'Penataan') ? 'Pasang' : 'Bongkar';
+  const tgls = items.map((p) => tahap === 'Pasang' ? p.tanggal_pasang : p.tanggal_bongkar).filter(isYMD).sort();
+  const tanggal = tahap === 'Pasang' ? (tgls[0] || a.tanggal_mulai) : (tgls[tgls.length - 1] || a.tanggal_selesai || a.tanggal_mulai);
+  return { items, tahap, tanggal };
+}
+function varsJadwal(ida, idv, tahap) {
+  const a = App.acara(ida), v = App.maps.vendor[idv] || {}, j = jadwalInfo(ida, idv, tahap);
+  return {
+    pic: v.pic || v.nama_vendor || '', vendor: v.nama_vendor || '', acara: a.nama_acara, kegiatan: j.tahap === 'Pasang' ? 'pemasangan' : 'pembongkaran',
+    tanggal: tglPanjang(j.tanggal), lokasi: (j.items[0] && j.items[0].lokasi) || a.lokasi || '-',
+    daftar_barang: j.items.map((x) => '• ' + x.nama_barang + (x.spek ? ' (' + x.spek + ')' : '') + ' — ' + fmtQty(x.jumlah) + ' ' + x.satuan).join('\n') || '-',
+    admin: D().settings.nama_admin
+  };
+}
+function varsBayar(idp) {
+  const d = D(), p = App.maps.pembayaran[idp] || {}, v = App.maps.vendor[p.id_vendor] || {};
+  const al = d.alokasi.filter((a) => a.id_pembayaran === idp);
+  const pot = al.reduce((s2, a) => s2 + num(a.diskon) + num(a.diskon_gab), 0);
+  const sisa = d.fin.av.filter((x) => x.id_vendor === p.id_vendor && !isOff(App.maps.acara[x.id_acara])).reduce((s2, x) => s2 + Math.max(0, x.sisa), 0);
+  return {
+    pic: v.pic || v.nama_vendor || '', vendor: v.nama_vendor || '', tanggal_bayar: tglPanjang(p.tanggal_bayar), metode: p.metode || '-', nominal: rp(p.nominal_total),
+    potongan: rp(pot), sisa_tagihan: rp(sisa),
+    daftar_acara: al.map((a) => '• ' + App.acara(a.id_acara).nama_acara + ' — ' + rp(a.nominal) + (num(a.diskon) + num(a.diskon_gab) > 0 ? ' (+ potongan ' + rp(num(a.diskon) + num(a.diskon_gab)) + ')' : '')).join('\n') || '-',
+    admin: d.settings.nama_admin
+  };
+}
 function sampleVars(type) {
+  if (type === 'jadwal') {
+    const p = D().pesanan[0];
+    return p ? varsJadwal(p.id_acara, p.id_vendor) : { pic: 'Pak Slamet', vendor: 'Berkah Jaya Tenda', acara: 'Panggung Gembira', kegiatan: 'pemasangan', tanggal: tglPanjang(addDays(App.today, 1)), lokasi: 'Lapangan Hijau', daftar_barang: '• Tenda VIP 10x20 m — 2 set', admin: D().settings.nama_admin };
+  }
+  if (type === 'bayar') {
+    const p = D().pembayaran[0];
+    return p ? varsBayar(p.id_pembayaran) : { pic: 'Pak Slamet', vendor: 'Berkah Jaya Tenda', tanggal_bayar: tglPanjang(App.today), metode: 'Transfer', nominal: rp(12000000), potongan: rp(0), sisa_tagihan: rp(0), daftar_acara: '• Panggung Gembira — Rp 12.000.000', admin: D().settings.nama_admin };
+  }
   if (type === 'konsumsi') {
     const k = D().konsumsi[0];
     return k ? varsKonsumsi(k) : { panitia: 'Ust. Rahmat', acara: 'Panggung Gembira', vendor: 'Berkah Jaya Tenda', kegiatan: 'memasang', tanggal: tglPanjang(addDays(App.today, 1)), jam: '08:00 WIB', lokasi: 'Lapangan Hijau', jumlah_pekerja: 8, durasi: 7, kesulitan: 'Berat', rekomendasi: D().settings.konsumsi_berat, admin: D().settings.nama_admin };
@@ -118,8 +166,9 @@ function tagihSetoranText(ida) { return fillTpl(getTpl('tagih'), varsTagih(ida))
 function tplBtn(type, ref, label = 'Edit Format', cls = 'btn-ghost btn-sm') {
   return `<button type="button" class="btn ${cls}" data-act="wa-tpl" data-tpl="${type}" ${ref ? `data-ref="${esc(ref)}"` : ''} title="Ubah format pesan WhatsApp">${ic('edit', 14)} ${label}</button>`;
 }
-function waBtn(phone, text, label = 'Kirim WA', cls = 'btn-sm') {
-  return `<a class="btn wa-btn ${cls}" href="${waLink(phone, text)}" target="_blank" rel="noopener">${ic('chat', 15)} ${label}</a>`;
+/** Tombol WA → membuka jendela kirim (Fonnte otomatis / buka WhatsApp). meta: { jenis, ref, nama, tpl } */
+function waBtn(phone, text, label = 'Kirim WA', cls = 'btn-sm', meta = {}) {
+  return `<button type="button" class="btn wa-btn ${cls}" data-act="wa-compose" data-to="${esc(phone || '')}" data-text="${esc(text)}" data-jenis="${esc(meta.jenis || 'manual')}" data-ref="${esc(meta.ref || '')}" data-nama="${esc(meta.nama || '')}" data-tpl="${esc(meta.tpl || '')}">${ic('chat', 15)} ${label}</button>`;
 }
 function vendorOpts(val, placeholder = 'Pilih vendor', onlyActive = true) {
   return selectOpts(D().vendor.filter((v) => !onlyActive || v.aktif || v.id_vendor === val).map((v) => ({ value: v.id_vendor, label: v.nama_vendor })), val, placeholder);
@@ -289,7 +338,7 @@ AdminViews.beranda = {
       rows: list, pageSize: 8,
       empty: emptyState(tab === 'setoran' ? 'Semua panitia sudah menyetor' : 'Tidak ada acara yang ditalangi', '', 'checkCircle'),
       search: (r) => App.acara(r.id_acara).nama_acara + ' ' + App.acara(r.id_acara).nama_panitia, placeholder: 'Cari acara / panitia...',
-      tools: tplBtn('tagih', '', 'Edit Format WA Tagihan', 'btn-soft btn-sm'),
+      tools: tplBtn('tagih', '', 'Edit Format WA Tagihan', 'btn-soft btn-sm') + (tab === 'setoran' ? `<button class="btn wa-btn btn-sm" data-act="wa-bulk-tagih">${ic('send', 14)} Tagih semua via WA</button>` : ''),
       cols: [
         { key: 'acara', label: 'Acara & Panitia', main: true, sortVal: (r) => App.acara(r.id_acara).nama_acara, render: (r) => { const a = App.acara(r.id_acara); return `<div class="row" style="gap:12px"><span class="t-ic">${ic('users', 18)}</span><div style="min-width:0"><div class="t-main">${esc(a.nama_acara)}</div><div class="t-sub">PJ: ${esc(a.nama_panitia || '-')}</div></div></div>`; } },
         { key: 'biaya', label: 'Biaya Riil', align: 'r', render: (r) => `<span class="tnum">${rp(r.biaya)}</span>` },
@@ -300,7 +349,7 @@ AdminViews.beranda = {
           ? { key: 'kekurangan', label: 'Kekurangan', align: 'r', render: (r) => `<b class="tnum tx-bad">${rp(r.kekurangan)}</b>` }
           : { key: 'talangan', label: 'Talangan Admin', align: 'r', render: (r) => `<b class="tnum tx-bad">${rp(r.talangan)}</b>` },
         { key: 'umur', label: 'Jatuh Tempo', render: (r) => agingPill(r.umur, amb) },
-        { key: '', label: 'Tindakan', acts: true, sort: false, render: (r) => { const a = App.acara(r.id_acara); return `<div class="acts">${waBtn(a.kontak_panitia, tagihSetoranText(r.id_acara), 'Tagih')}<button class="btn btn-soft btn-sm" data-act="new-setoran" data-acara="${r.id_acara}">${ic('plus', 14)} Setoran</button></div>`; } }
+        { key: '', label: 'Tindakan', acts: true, sort: false, render: (r) => { const a = App.acara(r.id_acara); return `<div class="acts">${waBtn(a.kontak_panitia, tagihSetoranText(r.id_acara), 'Tagih', 'btn-sm', { jenis: 'tagih', ref: r.id_acara, nama: a.nama_panitia, tpl: 'tagih' })}<button class="btn btn-soft btn-sm" data-act="new-setoran" data-acara="${r.id_acara}">${ic('plus', 14)} Setoran</button></div>`; } }
       ]
     });
   },
@@ -321,7 +370,7 @@ AdminViews.beranda = {
       <div class="row wrap">
         <button class="btn btn-mint btn-sm" data-act="copy" data-target="ks-txt-${k.id_konsumsi}">${ic('copy', 15)} Salin Format WA</button>
         ${tplBtn('konsumsi', k.id_konsumsi)}
-        ${a.kontak_panitia ? waBtn(a.kontak_panitia, txt, 'Kirim ke Panitia') : ''}
+        ${a.kontak_panitia ? waBtn(a.kontak_panitia, txt, 'Kirim ke Panitia', 'btn-sm', { jenis: 'konsumsi', ref: k.id_konsumsi, nama: a.nama_panitia, tpl: 'konsumsi' }) : ''}
         <button class="btn ${k.sudah_diingatkan ? 'btn-ghost' : 'btn-primary'} btn-sm" data-act="ks-mark" data-id="${k.id_konsumsi}" data-v="${k.sudah_diingatkan ? '0' : '1'}">${ic(k.sudah_diingatkan ? 'x' : 'check', 15)} ${k.sudah_diingatkan ? 'Batalkan tanda' : 'Tandai Sudah Diingatkan'}</button>
       </div>
     </div>`;
@@ -521,7 +570,7 @@ const AcaraDetail = {
         <button class="btn btn-soft btn-sm" data-act="new-setoran" data-acara="${esc(id)}">${ic('coins', 15)} Catat Setoran</button>
         <button class="btn btn-soft btn-sm" data-act="new-konsumsi" data-acara="${esc(id)}">${ic('utensils', 15)} Konsumsi</button>
         <button class="btn btn-soft btn-sm" data-act="v-foto" data-id="${esc(id)}">${ic('camera', 15)} Foto Pemasangan${FotoBarang.list({ id_acara: id }).length ? ' (' + FotoBarang.list({ id_acara: id }).length + ')' : ''}</button>
-        ${x.kekurangan > 0 && a.kontak_panitia ? waBtn(a.kontak_panitia, tagihSetoranText(id), 'Tagih Panitia') : ''}
+        ${x.kekurangan > 0 && a.kontak_panitia ? waBtn(a.kontak_panitia, tagihSetoranText(id), 'Tagih Panitia', 'btn-sm', { jenis: 'tagih', ref: id, nama: a.nama_panitia, tpl: 'tagih' }) : ''}
         <span class="grow"></span>
         <button class="btn btn-ghost btn-sm" data-act="edit-acara" data-id="${esc(id)}">${ic('edit', 15)} Edit</button>
         <button class="btn btn-ghost btn-sm" data-act="aktif-acara" data-id="${esc(id)}" data-v="${a.nonaktif ? '1' : '0'}">${ic(a.nonaktif ? 'checkCircle' : 'eyeOff', 15)} ${a.nonaktif ? 'Aktifkan' : 'Nonaktifkan'}</button>
@@ -580,7 +629,7 @@ const AcaraDetail = {
           { key: 'dibayar', label: 'Dibayar', align: 'r', render: (r) => `<span class="tnum">${rp(r.dibayar)}</span>${potText(r.potongan, r.potongan_gab)}` },
           { key: 'sisa', label: 'Sisa', align: 'r', render: (r) => `<b class="tnum ${r.sisa > 0 ? 'tx-bad' : ''}">${rp(Math.max(0, r.sisa))}</b>` },
           { key: 'status', label: 'Status', render: (r) => payBadge(r.status) + (r.sisa > 0 ? ' ' + agingPill(r.umur, amb) : '') },
-          { key: '', label: '', acts: true, sort: false, render: (r) => r.sisa > 0 ? `<div class="acts"><button class="btn btn-primary btn-sm" data-act="new-bayar" data-vendor="${r.id_vendor}" data-acara="${esc(id)}">${ic('wallet', 14)} Bayar</button></div>` : '' }
+          { key: '', label: '', acts: true, sort: false, render: (r) => { const v = App.maps.vendor[r.id_vendor] || {}; return `<div class="acts">${v.kontak ? waBtn(v.kontak, fillTpl(getTpl('jadwal'), varsJadwal(id, r.id_vendor)), 'Ingatkan jadwal', 'btn-sm', { jenis: 'jadwal', ref: id + '|' + r.id_vendor, nama: v.nama_vendor, tpl: 'jadwal' }) : ''}${r.sisa > 0 ? `<button class="btn btn-primary btn-sm" data-act="new-bayar" data-vendor="${r.id_vendor}" data-acara="${esc(id)}">${ic('wallet', 14)} Bayar</button>` : ''}</div>`; } }
         ]
       });
     }
@@ -1122,7 +1171,7 @@ AdminViews.pembayaran = {
           { key: 'alokasi', label: 'Dialokasikan ke', sort: false, render: (r) => `<div class="stack" style="gap:2px;align-items:inherit">${d.alokasi.filter((a) => a.id_pembayaran === r.id_pembayaran).map((a) => `<span class="small"><a href="#/acara/${encodeURIComponent(a.id_acara)}">${esc(App.acara(a.id_acara).nama_acara)}</a> <span class="muted tnum">${rp(a.nominal)}</span>${num(a.diskon) > 0 ? ` <span class="xs tx-ok">−pot ${rp(a.diskon)}</span>` : ''}${num(a.diskon_gab) > 0 ? ` <span class="xs muted" title="Bagian potongan gabungan (hanya Admin)">${ic('lock', 10)} ${rp(a.diskon_gab)}</span>` : ''}</span>`).join('')}</div>` },
           { key: 'berkas', label: 'Bukti & Nota', sort: false, render: (r) => `<div class="row" style="gap:6px;justify-content:inherit">${fileLink(r.id_berkas_bukti, 'Bukti', 'Bukti Transfer')}${fileLink(r.id_berkas_nota, 'Nota', 'Nota Vendor')}</div>${r.id_berkas_bukti ? `<div class="xs ${r.tampilkan_ke_vendor ? 'tx-ok' : 'muted'}" style="margin-top:3px">${r.tampilkan_ke_vendor ? '● tampil ke vendor' : '○ tersembunyi dari vendor'}</div>` : ''}` },
           { key: 'nota_diteruskan', label: 'Nota → Panitia', render: (r) => `<button class="btn btn-xs ${r.nota_diteruskan ? 'btn-mint' : 'btn-soft'}" data-act="nota-toggle" data-id="${r.id_pembayaran}" data-v="${r.nota_diteruskan ? '0' : '1'}">${ic(r.nota_diteruskan ? 'checkCircle' : 'circle', 14)} ${r.nota_diteruskan ? 'Diteruskan ' + tgl(r.tanggal_nota_diteruskan) : 'Belum diteruskan'}</button>` },
-          { key: '', label: '', acts: true, sort: false, render: (r) => `<div class="acts"><button class="btn btn-soft btn-sm" data-act="nota-bayar" data-id="${r.id_pembayaran}" title="Nota pembayaran (PDF)">${ic('printer', 14)} Nota</button><button class="btn btn-ghost btn-sm" data-act="edit-bayar" data-id="${r.id_pembayaran}" aria-label="Edit">${ic('edit', 15)}</button><button class="btn btn-ghost btn-sm tx-bad" data-act="del-bayar" data-id="${r.id_pembayaran}" aria-label="Hapus">${ic('trash', 15)}</button></div>` }
+          { key: '', label: '', acts: true, sort: false, render: (r) => `<div class="acts">${(App.maps.vendor[r.id_vendor] || {}).kontak ? waBtn(App.maps.vendor[r.id_vendor].kontak, fillTpl(getTpl('bayar'), varsBayar(r.id_pembayaran)), 'Kabari', 'btn-sm', { jenis: 'bayar', ref: r.id_pembayaran, nama: App.vName(r.id_vendor), tpl: 'bayar' }) : ''}<button class="btn btn-soft btn-sm" data-act="nota-bayar" data-id="${r.id_pembayaran}" title="Nota pembayaran (PDF)">${ic('printer', 14)} Nota</button><button class="btn btn-ghost btn-sm" data-act="edit-bayar" data-id="${r.id_pembayaran}" aria-label="Edit">${ic('edit', 15)}</button><button class="btn btn-ghost btn-sm tx-bad" data-act="del-bayar" data-id="${r.id_pembayaran}" aria-label="Hapus">${ic('trash', 15)}</button></div>` }
         ]
       })}
     </div>`;
@@ -1208,6 +1257,7 @@ function openBayarForm(opt = {}) {
         <div class="field"><label>Nota dari vendor ${edit && edit.id_berkas_nota ? fileLink(edit.id_berkas_nota, 'Lihat tersimpan', 'Nota Vendor') : ''}</label>${uploadBox('pm-nota', edit && edit.id_berkas_nota ? 'Ganti nota vendor' : 'Unggah nota vendor', 'Foto/PDF • internal Admin')}</div>
         <label class="check"><input type="checkbox" id="pm-show" ${!edit || edit.tampilkan_ke_vendor ? 'checked' : ''}><span><b>Tampilkan bukti transfer ke vendor</b><br><span class="small muted">Vendor dapat melihat bukti ini di portalnya.</span></span></label>
         <label class="check"><input type="checkbox" id="pm-fwd" ${edit && edit.nota_diteruskan ? 'checked' : ''}><span><b>Nota sudah diteruskan ke panitia</b><br><span class="small muted">Tanggal dicatat otomatis hari ini.</span></span></label>
+        <label class="check full"><input type="checkbox" id="pm-wa" ${!edit && D().wa && D().wa.token_set ? 'checked' : ''}><span><b>${ic('chat', 13)} Kabari vendor lewat WhatsApp setelah disimpan</b><br><span class="small muted">Pesan pemberitahuan pembayaran (format bisa diedit) ditampilkan dulu sebelum dikirim.</span></span></label>
         <div class="field full"><label>Catatan</label><input class="input" id="pm-cat" value="${esc(edit ? edit.catatan : '')}" placeholder="mis. Pelunasan termin 2"></div>
       </div>`,
     foot: `<span class="note">${ic('lock', 14)} Tercatat di jurnal kas & log aktivitas.</span><button class="btn btn-ghost" data-modal-close>Batal</button><button class="btn btn-primary" id="pm-save">${ic('check', 16)} Simpan Pembayaran</button>`
@@ -1366,7 +1416,15 @@ function openBayarForm(opt = {}) {
       nominal_total: nominal, diskon_total: gd.G || 0, tampilkan_ke_vendor: $('#pm-show').checked, nota_diteruskan: $('#pm-fwd').checked,
       tanggal_nota_diteruskan: edit && edit.nota_diteruskan ? edit.tanggal_nota_diteruskan : '', catatan: $('#pm-cat').value
     };
-    await App.write('savePembayaran', { data, alokasi, fileBukti, fileNota }, { btn, busyText: 'Menyimpan & mengunggah...' });
+    const kabari = $('#pm-wa').checked;
+    const res = await App.write('savePembayaran', { data, alokasi, fileBukti, fileNota }, { btn, busyText: 'Menyimpan & mengunggah...' });
+    if (res.success && kabari) {
+      const idp = res.id || (edit && edit.id_pembayaran);
+      const v = App.maps.vendor[PM.vendor] || {};
+      if (!idp || !App.maps.pembayaran[idp]) return;
+      if (!v.kontak) return toast('Nomor WhatsApp vendor belum diisi (menu Vendor & Akun).', 'warn', 5000);
+      openWaCompose({ to: v.kontak, nama: v.nama_vendor, text: fillTpl(getTpl('bayar'), varsBayar(idp)), jenis: 'bayar', ref: idp, tpl: 'bayar' });
+    }
   });
 }
 
@@ -1380,7 +1438,7 @@ AdminViews.setoran = {
     const perAcara = acaraAktif().map((a) => Object.assign({ id_acara: a.id_acara }, App.finA(a.id_acara))).filter((x) => x.biaya > 0 || x.setoran > 0);
     return `
     <div class="page-head"><div><span class="eyebrow">${ic('coins', 13)} Keuangan</span><h1>Setoran Panitia</h1><p>Dana yang disetor panitia ke Admin. Kewajiban setor dihitung dari biaya riil (harga vendor), bukan estimasi.</p></div>
-      <button class="btn btn-primary" data-act="new-setoran">${ic('plus', 17)} Catat Setoran</button></div>
+      <div class="row wrap"><button class="btn wa-btn" data-act="wa-bulk-tagih">${ic('send', 16)} Tagih Semua via WA</button><button class="btn btn-primary" data-act="new-setoran">${ic('plus', 17)} Catat Setoran</button></div></div>
     <div class="mini-kpis stagger">
       <div class="mini-kpi" style="--i:0"><div class="l">Total Setoran Diterima</div><div class="v">${countEl(t.setoran)}</div><div class="s">${d.setoran.length} transaksi</div></div>
       <div class="mini-kpi" style="--i:1"><div class="l tx-bad">Kekurangan Setoran</div><div class="v tx-bad">${countEl(t.kekurangan)}</div><div class="s">${t.n_setoran_kurang} acara belum lunas</div></div>
@@ -1400,7 +1458,7 @@ AdminViews.setoran = {
           { key: 'kekurangan', label: 'Kekurangan', align: 'r', render: (r) => `<b class="tnum ${r.kekurangan > 0 ? 'tx-bad' : 'tx-ok'}">${rp(r.kekurangan)}</b>` },
           { key: 'dana', label: 'Dana / Talangan', align: 'r', render: (r) => r.talangan > 0 ? badge('Talangan ' + rp(r.talangan), 'b-bad') : `<span class="tnum tx-ok">${rp(r.dana)}</span>` },
           { key: 'status_setoran', label: 'Status', render: (r) => payBadge(r.status_setoran) + (r.kekurangan > 0 ? ' ' + agingPill(r.umur, ambang()) : '') },
-          { key: '', label: '', acts: true, sort: false, render: (r) => { const a = App.acara(r.id_acara); return `<div class="acts">${r.kekurangan > 0 ? waBtn(a.kontak_panitia, tagihSetoranText(r.id_acara), 'Tagih') : ''}<button class="btn btn-soft btn-sm" data-act="new-setoran" data-acara="${r.id_acara}">${ic('plus', 14)} Setoran</button></div>`; } }
+          { key: '', label: '', acts: true, sort: false, render: (r) => { const a = App.acara(r.id_acara); return `<div class="acts">${r.kekurangan > 0 ? waBtn(a.kontak_panitia, tagihSetoranText(r.id_acara), 'Tagih', 'btn-sm', { jenis: 'tagih', ref: r.id_acara, nama: a.nama_panitia, tpl: 'tagih' }) : ''}<button class="btn btn-soft btn-sm" data-act="new-setoran" data-acara="${r.id_acara}">${ic('plus', 14)} Setoran</button></div>`; } }
         ]
       })}
     </div>
@@ -1714,7 +1772,7 @@ function credentialDialog(username, password, idv) {
   Modal.open({
     title: 'Akun berhasil dibuat', size: 'sm', id: 'cred-modal', onClose: () => (CRED = null),
     body: `<div class="wa-box" id="cred-txt">${esc(text)}</div><p class="small muted">Kata sandi tidak dapat dilihat lagi setelah jendela ini ditutup.</p>`,
-    foot: `${tplBtn('akun', '', 'Edit Format')}<button class="btn btn-mint" data-act="copy" data-target="cred-txt">${ic('copy', 15)} Salin</button>${v.kontak ? `<a class="btn wa-btn" id="cred-wa" href="${waLink(v.kontak, text)}" target="_blank" rel="noopener">${ic('chat', 15)} Kirim WA</a>` : ''}`
+    foot: `${tplBtn('akun', '', 'Edit Format')}<button class="btn btn-mint" data-act="copy" data-target="cred-txt">${ic('copy', 15)} Salin</button>${v.kontak ? waBtn(v.kontak, text, 'Kirim WA', '', { jenis: 'akun', ref: idv, nama: v.pic || v.nama_vendor, tpl: 'akun' }).replace('<button ', '<button id="cred-wa" ') : ''}`
   });
 }
 function refreshCredential() {
@@ -1722,7 +1780,7 @@ function refreshCredential() {
   const v = App.maps.vendor[CRED.id_vendor] || {};
   const text = fillTpl(getTpl('akun'), varsAkun(CRED));
   const box = document.getElementById('cred-txt'); if (box) box.textContent = text;
-  const wa = document.getElementById('cred-wa'); if (wa) wa.href = waLink(v.kontak, text);
+  const wa = document.getElementById('cred-wa'); if (wa) wa.dataset.text = text;
 }
 
 /* Editor format pesan WhatsApp */
@@ -1731,6 +1789,8 @@ ACT['wa-tpl'] = (el) => {
   let vars;
   if (type === 'konsumsi') { const k = ref && D().konsumsi.find((x) => x.id_konsumsi === ref); vars = k ? varsKonsumsi(k) : sampleVars(type); }
   else if (type === 'tagih') vars = ref ? varsTagih(ref) : sampleVars(type);
+  else if (type === 'jadwal') vars = ref ? varsJadwal(...ref.split('|')) : sampleVars(type);
+  else if (type === 'bayar') vars = ref && App.maps.pembayaran[ref] ? varsBayar(ref) : sampleVars(type);
   else vars = CRED ? varsAkun(CRED) : sampleVars(type);
   openTplEditor(type, vars);
 };

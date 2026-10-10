@@ -794,3 +794,27 @@ img { max-width: 100%; }
 .pm-full { margin-top: 6px; width: 100%; justify-content: center; }
 .pm-full.on { background: var(--ok-bg); color: var(--ok-tx); border-color: var(--ok-bd); }
 .pm-dana { margin-top: 3px; }
+
+/* ===== v1.7 — WhatsApp (Fonnte) ===== */
+.wb-list { display: flex; flex-direction: column; gap: 8px; max-height: 56vh; overflow-y: auto; padding-right: 2px; }
+.wb-row { display: flex; gap: 12px; align-items: flex-start; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); transition: background .25s, border-color .25s; }
+.wb-row.ok { background: color-mix(in srgb, var(--ok-bg) 55%, var(--card)); border-color: var(--ok-bd); }
+.wb-row.bad { background: color-mix(in srgb, var(--bad-bg) 55%, var(--card)); border-color: var(--bad-bd); }
+.wb-row .bulk-cb { margin-top: 3px; }
+.wb-row summary { cursor: pointer; color: var(--primary-text, var(--ok-tx)); margin-top: 4px; width: fit-content; }
+.wb-st { flex-shrink: 0; text-align: right; max-width: 190px; }
+.wb-prog { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+.switch-row { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+.switch-row input { width: 18px; height: 18px; accent-color: #10B981; }
+.wa-jenis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.wa-jenis-item { display: flex; gap: 10px; align-items: flex-start; padding: 12px; border: 1px solid var(--border); border-radius: 12px; cursor: pointer; background: var(--card-2); transition: border-color .2s, background .2s; }
+.wa-jenis-item:has(input:checked) { border-color: var(--ok-bd); background: var(--ok-bg); }
+.wa-jenis-item input { margin-top: 9px; accent-color: #10B981; }
+.wa-help summary { cursor: pointer; }
+.wa-log-msg { max-width: 360px; white-space: normal; }
+button.wa-btn { cursor: pointer; }
+@media (max-width: 768px) {
+  .wa-jenis { grid-template-columns: 1fr; }
+  .wb-row { flex-wrap: wrap; }
+  .wb-st { max-width: none; width: 100%; text-align: left; padding-left: 30px; }
+}

@@ -112,7 +112,7 @@ Jika tampilan belum berubah, tekan **Ctrl+Shift+R**.
 
 ---
 
-## E. FITUR TAMBAHAN (versi 1.1 – 1.6)
+## E. FITUR TAMBAHAN (versi 1.1 – 1.7)
 
 ### E1. Import katalog dari Excel
 1. Buka **Katalog Barang**, lalu klik **Import Excel** → **Template Excel**.
@@ -207,15 +207,76 @@ Klik label warna di atas daftar (mis. *Belum setor 3*) untuk menyaring. Klik sek
 - Pilihannya: **Belum → Penataan → Terpasang → Dibongkar**.
 - Ubah langsung dari pilihan di samping tiap barang, atau gunakan **Ubah Status Serentak & Foto** untuk banyak barang sekaligus. Tersedia tombol *Semua terpasang* dan *Semua dibongkar*.
 
-### E7. Cara memperbarui aplikasi yang sudah terpasang
+### E7. WhatsApp otomatis lewat Fonnte (v1.7)
+Dengan fitur ini, pesan WhatsApp ke panitia dan vendor dikirim langsung dari aplikasi tanpa membuka WhatsApp satu per satu. Formatnya tetap bisa diedit.
+
+**1. Siapkan Fonnte (sekali saja)**
+1. Daftar atau masuk di **fonnte.com**.
+2. Buka **Device → Add Device**. Isi nama dan **nomor WA pengirim**. Disarankan memakai nomor khusus bagian perlengkapan.
+3. Klik **Connect**, lalu scan QR dari WhatsApp di HP tersebut (*Perangkat Tertaut*). HP itu sebaiknya tetap aktif dan terhubung internet.
+4. Klik **Token** pada device tersebut, lalu salin tokennya.
+
+**2. Pasang token di aplikasi**
+1. Buka menu **WhatsApp**, tempel token, lalu klik **Simpan Token**.
+2. Pastikan status menunjukkan **Terhubung** beserta nomor pengirim dan sisa kuota.
+3. Klik **Kirim Pesan Tes** ke nomor Ustadz sendiri untuk memastikan pesan sampai.
+4. Isi **Nomor WhatsApp Admin** di menu **Pengaturan**. Nomor ini dipakai untuk ringkasan harian.
+
+> 🔒 Token disimpan di server Apps Script (Script Properties), **bukan** di GitHub atau browser. Di layar hanya terlihat 4 karakter terakhirnya.
+
+**3. Kirim manual**
+- Setiap tombol hijau WhatsApp kini membuka jendela **Kirim WhatsApp**:
+  - Nomor dan isi pesan bisa diubah dulu untuk pengiriman itu.
+  - Klik **Kirim Otomatis** agar pesan langsung terkirim lewat Fonnte.
+  - Atau klik **Buka WhatsApp** untuk cara lama.
+- Tombol yang tersedia:
+
+| Tombol | Lokasi | Penerima |
+|---|---|---|
+| **Tagih / Tagih Panitia** | Setoran, Beranda, Detail acara | Panitia |
+| **Kirim ke Panitia** | Beranda → Konsumsi | Panitia. Setelah terkirim, otomatis ditandai *sudah diingatkan* |
+| **Ingatkan jadwal** | Detail acara → tab *Per Vendor* | Vendor (berisi daftar barangnya) |
+| **Kabari** | Riwayat Pembayaran | Vendor (pemberitahuan pembayaran) |
+| **Kirim WA** | Setelah membuat/reset akun vendor | Vendor |
+
+- Saat **Catat Pembayaran**, centang *Kabari vendor lewat WhatsApp setelah disimpan*. Pesan pemberitahuan langsung muncul setelah pembayaran disimpan.
+
+**4. Kirim banyak sekaligus**
+- **Tagih Semua via WA** di halaman Setoran Panitia: semua panitia yang masih kurang setor ditampilkan dalam satu daftar. Centang yang ingin dikirim, lalu klik **Kirim**.
+- **Susun & Kirim Pengingat** di menu WhatsApp menyiapkan semua pengingat hari ini:
+  - konsumsi H-1 dan hari H;
+  - jadwal pasang atau bongkar besok ke vendor;
+  - tagihan setoran yang lewat jatuh tempo;
+  - ringkasan untuk Admin.
+- Pesan yang sudah dikirim atau tidak punya nomor otomatis **dilewati**, beserta alasannya.
+- Pesan dikirim berurutan dengan jeda sekitar 1 detik agar nomor aman.
+
+**5. Pengingat otomatis (opsional)**
+- Di menu WhatsApp, centang **Aktifkan pengingat otomatis**. Pilih jam kirim dan jenis pengingatnya, lalu klik **Simpan**.
+- Setiap hari pada jam tersebut, sistem mengirim pengingat sendiri tanpa perlu membuka aplikasi.
+- Pesan yang sama tidak dikirim dua kali. Tagihan setoran diulang sesuai pengaturan *setiap X hari*.
+- Untuk mematikannya, hilangkan centang lalu klik **Simpan**.
+
+**6. Format pesan dan riwayat**
+- Semua format bisa diedit di menu WhatsApp → **Format Pesan**:
+  - konsumsi, tagihan setoran, dan akun vendor;
+  - format baru: **jadwal pasang/bongkar** dan **pemberitahuan pembayaran**.
+- Format yang sama dipakai untuk kirim manual maupun otomatis.
+- **Riwayat Kirim** menampilkan 150 pesan terakhir, lengkap dengan status terkirim atau gagal beserta alasannya. Data lengkapnya ada di sheet **Log_WA**. Pesan yang berisi kata sandi tidak disimpan.
+
+### E8. Cara memperbarui aplikasi yang sudah terpasang
 1. **Backend:** buka editor Apps Script, ganti seluruh isi `Kode.gs` dengan versi baru, lalu simpan.
-   Setelah itu buka **Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy**.
-   Jangan jalankan `setupAppEnvironment` lagi. URL tetap sama.
-2. **Frontend:** ekstrak ZIP baru, lalu salin semua berkasnya ke folder repository Anda dan timpa berkas lama, **kecuali `js/config.js`**. Berkas itu berisi GAS_URL Anda.
+2. **Khusus update ke v1.7 (wajib, sekali saja):** di editor Apps Script, pilih fungsi **`izinkanWhatsApp`** di daftar fungsi, lalu klik **▶ Run**.
+   - Akan muncul permintaan izin baru: *terhubung ke layanan luar* (Fonnte) dan *menjalankan pemicu terjadwal*.
+   - Klik **Review permissions → pilih akun → Advanced → Go to … (unsafe) → Allow**.
+   - Langkah ini wajib. Tanpanya, aplikasi akan menampilkan galat izin setelah deploy.
+3. Buka **Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy**.
+   Jangan jalankan `setupAppEnvironment` lagi. URL tetap sama, dan sheet **Log_WA** dibuat otomatis.
+4. **Frontend:** ekstrak ZIP baru, lalu salin semua berkasnya ke folder repository Anda dan timpa berkas lama, **kecuali `js/config.js`**. Berkas itu berisi GAS_URL Anda.
    Setelah itu jalankan:
    ```bash
    git add .
-   git commit -m "Update v1.6"
+   git commit -m "Update v1.7"
    git push
    ```
 
@@ -233,7 +294,12 @@ Klik label warna di atas daftar (mis. *Belum setor 3*) untuk menyaring. Klik sek
 | Perubahan kode backend tidak berlaku | Manage deployments → Edit → **New version** |
 | Halaman 404 di GitHub Pages | Pastikan `index.html` ada di root repository (bukan di subfolder) |
 | Tampilan tanpa warna (CSS 404) | Folder `css/` & `js/` harus ikut ter-push. Gunakan terminal, bukan upload web |
-| Muncul pesan "butuh backend terbaru" | Lakukan langkah E5 nomor 1 (Kode.gs baru + New version) |
+| Muncul pesan "butuh backend terbaru" | Lakukan langkah E8 (Kode.gs baru + New version) |
+| Setelah update v1.7 aplikasi galat / *"Authorization is required"* | Jalankan fungsi **`izinkanWhatsApp`** di editor Apps Script, klik **Allow**, lalu Deploy → **New version** |
+| WA: *"token invalid"* | Salin ulang token dari dashboard Fonnte (Device → Token), lalu tempel lagi di menu WhatsApp |
+| WA: status *Perangkat terputus* | Di dashboard Fonnte klik **Connect** pada device, lalu scan QR lagi dari HP pengirim |
+| WA: *"insufficient quota"* / *"target invalid"* | Kuota Fonnte habis (isi ulang paket) / nomor tujuan salah atau tidak memakai WhatsApp |
+| Pengingat otomatis tidak terkirim | Pastikan statusnya *Aktif*, token terpasang, dan fungsi `izinkanWhatsApp` sudah dijalankan. Cek Riwayat Kirim |
 | Import Excel: "Format .xls belum didukung" | Di Excel: File → Save As → *Excel Workbook (.xlsx)* |
 | Import Excel: vendor "belum terdaftar" | Samakan ejaan dengan sheet *Daftar Vendor*, tambahkan vendor di aplikasi, atau centang *Buat vendor baru otomatis* |
 | Tanggal bergeser 1 hari | Pastikan `appsscript.json` memakai `"timeZone": "Asia/Jakarta"` |
