@@ -112,7 +112,7 @@ Jika tampilan belum berubah, tekan **Ctrl+Shift+R**.
 
 ---
 
-## E. FITUR TAMBAHAN (versi 1.1 – 1.7)
+## E. FITUR TAMBAHAN (versi 1.1 – 1.8)
 
 ### E1. Import katalog dari Excel
 1. Buka **Katalog Barang**, lalu klik **Import Excel** → **Template Excel**.
@@ -264,19 +264,60 @@ Dengan fitur ini, pesan WhatsApp ke panitia dan vendor dikirim langsung dari apl
 - Format yang sama dipakai untuk kirim manual maupun otomatis.
 - **Riwayat Kirim** menampilkan 150 pesan terakhir, lengkap dengan status terkirim atau gagal beserta alasannya. Data lengkapnya ada di sheet **Log_WA**. Pesan yang berisi kata sandi tidak disimpan.
 
-### E8. Cara memperbarui aplikasi yang sudah terpasang
+### E8. Jenis vendor: Vendor Luar & Vendor Internal (v1.8)
+Setiap vendor kini memiliki **jenis**. Jenis diatur di menu **Vendor & Akun → Edit → Jenis vendor**.
+
+| | Vendor Luar | Vendor Internal (unit pondok) |
+|---|---|---|
+| Contoh | CV Alfa Media Perkasa, Berkah Jaya | Unit perlengkapan / sound milik pondok |
+| Siapa yang membayar | **Admin** membayar vendor (alur lama) | **Panitia membayar langsung** ke vendor internal |
+| Masuk setoran panitia ke Admin? | Ya | **Tidak**. Tagihannya terpisah, jadi tidak terhitung dobel |
+| Isi portalnya | Daftar acara, status pasang, foto, bukti bayar | Portal lengkap (lihat di bawah) |
+
+**Membuat vendor internal**
+1. Buka **Vendor & Akun → Tambah Vendor**, lalu pilih **Vendor Internal (Pondok)**.
+2. Klik **Buat akun** untuk vendor tersebut, lalu berikan username dan kata sandinya.
+
+**Fitur portal vendor internal**
+- **Barang Saya**: menambah atau mengubah barang yang disewakan beserta harga sewanya ke panitia.
+- **Acara & Tagihan**:
+  - membuat acara sendiri, atau menambahkan barang ke acara yang sudah dibuat Admin;
+  - di setiap acara: **Kelola Barang**, status pasang (Belum → Penataan → Terpasang → Dibongkar), foto per barang, **Tagih Panitia** lewat WhatsApp, **Nota Tagihan**, dan **Catat Pembayaran**.
+- **Pembayaran Panitia**: semua uang yang diterima. Setiap pembayaran punya tombol **Nota** (PDF) dan **Terima kasih** (WhatsApp).
+- **Profil & Nota**:
+  - nomor WA, rekening, catatan di bawah nota, format pesan WA;
+  - **logo unit**. Logo tampil utuh di kiri atas nota dan otomatis diperkecil agar muat, tanpa terpotong. Disarankan memakai PNG berlatar transparan.
+- Vendor internal **hanya melihat data miliknya sendiri**. Data vendor lain, setoran ke Admin, dan keuangan Admin tidak terlihat.
+- WhatsApp dikirim dari **nomor WA vendor internal sendiri** (tombol *Buka WhatsApp*). Kuota Fonnte Admin tidak terpakai.
+
+**Isi nota vendor internal**
+- Logo dan identitas unit.
+- *Kepada* (panitia) dan data acara.
+- Rincian barang dan total tagihan.
+- Pembayaran pada nota itu, total dibayar, sisa, dan cap **LUNAS** / **BELUM LUNAS**.
+- Terbilang, nomor rekening, catatan, dan kolom tanda tangan.
+
+**Yang terlihat oleh Admin**
+- Di detail acara muncul panel **Vendor Internal Pondok** berisi tagihan, jumlah yang sudah dibayar, sisa, dan tombol **Nota**.
+- Daftar acara menampilkan label *Vendor internal Rp …*.
+- Vendor internal **tidak muncul** di form *Catat Pembayaran Vendor*, karena bukan Admin yang membayarnya.
+- Barang vendor internal tidak dimasukkan ke **PDF Estimasi** Admin. Sebagai gantinya ada catatan bahwa barang tersebut ditagih langsung oleh unitnya.
+
+> Data contoh: akun vendor internal **internal1 / internal123** (Unit Perlengkapan Pondok).
+
+### E9. Cara memperbarui aplikasi yang sudah terpasang
 1. **Backend:** buka editor Apps Script, ganti seluruh isi `Kode.gs` dengan versi baru, lalu simpan.
-2. **Khusus update ke v1.7 (wajib, sekali saja):** di editor Apps Script, pilih fungsi **`izinkanWhatsApp`** di daftar fungsi, lalu klik **▶ Run**.
+2. **Bila sebelumnya masih di bawah v1.7 (wajib, sekali saja):** di editor Apps Script, pilih fungsi **`izinkanWhatsApp`** di daftar fungsi, lalu klik **▶ Run**.
    - Akan muncul permintaan izin baru: *terhubung ke layanan luar* (Fonnte) dan *menjalankan pemicu terjadwal*.
    - Klik **Review permissions → pilih akun → Advanced → Go to … (unsafe) → Allow**.
    - Langkah ini wajib. Tanpanya, aplikasi akan menampilkan galat izin setelah deploy.
 3. Buka **Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy**.
-   Jangan jalankan `setupAppEnvironment` lagi. URL tetap sama, dan sheet **Log_WA** dibuat otomatis.
+   Jangan jalankan `setupAppEnvironment` lagi. URL tetap sama. Sheet baru (**Log_WA**, **Bayar_Internal**), kolom baru, dan folder Drive baru dibuat otomatis.
 4. **Frontend:** ekstrak ZIP baru, lalu salin semua berkasnya ke folder repository Anda dan timpa berkas lama, **kecuali `js/config.js`**. Berkas itu berisi GAS_URL Anda.
    Setelah itu jalankan:
    ```bash
    git add .
-   git commit -m "Update v1.7"
+   git commit -m "Update v1.8"
    git push
    ```
 
@@ -294,7 +335,7 @@ Dengan fitur ini, pesan WhatsApp ke panitia dan vendor dikirim langsung dari apl
 | Perubahan kode backend tidak berlaku | Manage deployments → Edit → **New version** |
 | Halaman 404 di GitHub Pages | Pastikan `index.html` ada di root repository (bukan di subfolder) |
 | Tampilan tanpa warna (CSS 404) | Folder `css/` & `js/` harus ikut ter-push. Gunakan terminal, bukan upload web |
-| Muncul pesan "butuh backend terbaru" | Lakukan langkah E8 (Kode.gs baru + New version) |
+| Muncul pesan "butuh backend terbaru" | Lakukan langkah E9 (Kode.gs baru + New version) |
 | Setelah update v1.7 aplikasi galat / *"Authorization is required"* | Jalankan fungsi **`izinkanWhatsApp`** di editor Apps Script, klik **Allow**, lalu Deploy → **New version** |
 | WA: *"token invalid"* | Salin ulang token dari dashboard Fonnte (Device → Token), lalu tempel lagi di menu WhatsApp |
 | WA: status *Perangkat terputus* | Di dashboard Fonnte klik **Connect** pada device, lalu scan QR lagi dari HP pengirim |

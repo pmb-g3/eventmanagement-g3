@@ -22,6 +22,8 @@ const AdminState = {
 
 /* ---------- Data turunan ---------- */
 const D = () => App.data;
+const isInt = (idv) => ((App.maps.vendor || {})[idv] || {}).jenis === 'Internal';
+function internalRows(ida) { return (D().fin.internal || []).filter((x) => x.id_acara === ida); }
 const ambang = () => num(D().settings.ambang_hari) || 14;
 function isOff(a) { return !a || a.status_acara === 'Batal' || a.nonaktif; }
 function acaraAktif() { return D().acara.filter((a) => !isOff(a)); }
@@ -472,6 +474,7 @@ AdminViews.acara = {
         <div class="ev-badges">
           ${x.biaya || x.tagihan_kotor ? payBadge(x.status_bayar, 'Vendor') : badge('Belum ada pesanan', 'b-neu')}
           ${x.talangan > 0 ? badge('Admin menalangi ' + rpShort(x.talangan), 'b-bad') : ''}
+          ${x.internal_tagihan > 0 ? badge('Vendor internal ' + rpShort(x.internal_tagihan) + (x.internal_sisa > 0 ? ' • sisa ' + rpShort(x.internal_sisa) : ' • lunas'), x.internal_sisa > 0 ? 'b-warn no-dot' : 'b-ok no-dot') : ''}
           ${x.jumlah_item ? badge(x.terpasang + '/' + x.jumlah_item + ' terpasang', pct === 100 ? 'b-ok' : 'b-info') : ''}
         </div>
       </div>
@@ -524,6 +527,13 @@ function acaraRank(a, today) {
 }
 ACT['st-filter'] = (el) => { const f = AdminState.acaraFilter; f.setoran = f.setoran === el.dataset.v ? '' : el.dataset.v; App.renderView(false); };
 ACT['af-reset'] = () => { Object.assign(AdminState.acaraFilter, { q: '', status: '', bayar: '', setoran: '', nonaktif: false }); App.renderView(false); };
+ACT['adm-nota-int'] = async (el) => {
+  setBusy(el, true, 'PDF...');
+  const res = await API.call('notaInternal', { id_acara: el.dataset.acara, id_vendor: el.dataset.vendor }, { timeout: 120000 });
+  setBusy(el, false);
+  if (!res.success) return toast(res.message, 'error', 6000);
+  showFile(res.file, 'Nota Tagihan Vendor Internal');
+};
 ACT['open-acara'] = (el) => { App.go('acara/' + encodeURIComponent(el.dataset.id)); };
 ACT['go-dokumen'] = () => App.go('dokumen');
 
@@ -586,6 +596,9 @@ const AcaraDetail = {
     </div>
     ${x.talangan > 0 ? `<div class="callout bad section" style="margin-top:14px">${ic('alert', 18)}<div><b>Admin menalangi ${rp(x.talangan)}.</b> Pembayaran ke vendor (${rp(x.dibayar)}) melebihi setoran panitia (${rp(x.setoran)}). Segera tagih panitia.</div></div>`
       : x.dana > 0 ? `<div class="callout ok section" style="margin-top:14px">${ic('wallet', 18)}<div>Dana di tangan Admin untuk acara ini: <b>${rp(x.dana)}</b> (setoran yang belum disalurkan ke vendor).</div></div>` : ''}
+    ${internalRows(id).length ? `<div class="card section int-box" style="margin-top:14px"><div class="card-head" style="margin-bottom:8px"><div><h3 style="font-size:15px"><span class="card-title-ic">${ic('home', 16)}</span>Vendor Internal Pondok</h3><p>Ditagih & dibayar <b>langsung</b> antara panitia dan vendor internal — tidak masuk setoran ke Admin.</p></div></div>
+      ${internalRows(id).map((r) => `<div class="li" style="flex-wrap:wrap;gap:10px"><span class="li-ic mint">${ic('store', 16)}</span><div class="grow" style="min-width:160px"><div class="bold small">${esc(App.vName(r.id_vendor))}</div><div class="xs muted">${r.jumlah_item} barang • tagihan ${rp(r.tagihan)} • dibayar ${rp(r.dibayar)}</div></div>
+        ${r.sisa > 0.5 ? badge('Sisa ' + rp(r.sisa), 'b-warn') : badge('LUNAS', 'b-ok')}<button class="btn btn-soft btn-xs" data-act="adm-nota-int" data-acara="${esc(id)}" data-vendor="${esc(r.id_vendor)}">${ic('printer', 13)} Nota</button></div>`).join('')}</div>` : ''}
     ${x.kelebihan > 0 ? `<div class="callout warn" style="margin-top:10px">${ic('info', 18)}<div>Setoran panitia melebihi biaya riil sebesar <b>${rp(x.kelebihan)}</b> — kemungkinan perlu dikembalikan.</div></div>` : ''}
 
     <div class="card section">
@@ -846,6 +859,7 @@ ACT['pdf-rekap-acara'] = async (el) => {
  *  EDITOR PESANAN BARANG
  * ===================================================================== */
 const PE = { acara: '', items: [], dirty: false, vendor: '' };
+const peInt = () => !!(App.data && App.data.internal); // mode vendor internal: harga sewa = harga ke panitia
 ACT['pesanan-editor'] = (el) => openPesananEditor(el.dataset.id || '');
 function loadPE() {
   PE.items = D().pesanan.filter((p) => p.id_acara === PE.acara).map((p) => Object.assign({}, p, { manual: !p.id_barang }));
@@ -853,9 +867,10 @@ function loadPE() {
 }
 function openPesananEditor(ida) {
   PE.acara = ida || '';
+  if (peInt()) PE.vendor = App.data.vendor[0].id_vendor;
   loadPE();
   const m = Modal.open({
-    title: 'Kelola Pesanan Barang', sub: 'Harga estimasi (untuk panitia) dan harga vendor (biaya riil) dicatat terpisah.', size: 'xl',
+    title: peInt() ? 'Kelola Barang Sewa' : 'Kelola Pesanan Barang', sub: peInt() ? 'Barang Anda yang disewa panitia pada acara ini. Harga sewa = nominal yang ditagihkan ke panitia.' : 'Harga estimasi (untuk panitia) dan harga vendor (biaya riil) dicatat terpisah.', size: 'xl',
     body: '<div id="pe-root"></div>',
     foot: `<span class="note">${ic('info', 14)} Status pemasangan barang yang sudah ada tetap tersimpan.</span><button class="btn btn-ghost" data-modal-close>Batal</button><button class="btn btn-primary" id="pe-save">${ic('check', 16)} Simpan Pesanan</button>`
   });
@@ -1004,7 +1019,7 @@ function renderPE(root) {
     <div class="pe-bar">
       <div class="field"><label>Vendor</label><select class="select sm" id="pe-v">${vendorOpts(PE.vendor, 'Semua vendor')}</select></div>
       <div class="field pe-search"><label>Cari &amp; tambah barang dari katalog</label>
-        <div class="search">${ic('search', 16)}<input type="search" id="pe-q" autocomplete="off" placeholder="Ketik nama barang, mis. tenda 6, kursi, sound..." value="${esc(PES.q)}"></div>
+        <div class="search">${ic('search', 16)}<input type="search" id="pe-q" data-autofocus autocomplete="off" placeholder="Ketik nama barang, mis. tenda 6, kursi, sound..." value="${esc(PES.q)}"></div>
         <div class="pe-list" id="pe-list" hidden></div>
       </div>
       <button class="btn btn-soft btn-sm" id="pe-manual" type="button">${ic('edit', 14)} Barang manual</button>
@@ -1018,7 +1033,7 @@ function renderPE(root) {
     </div>
     <div class="pe-scroll"><div>
       <div class="callout info" style="margin-top:12px;padding:9px 12px;font-size:12.5px">${ic('info', 16)}<div>Untuk barang bersatuan <b>m²</b> (mis. tenda per meter), tulis <b>Spek</b> ukurannya seperti <span class="mono">6x6</span> dan jumlah unitnya — <b>Jumlah m²</b> dihitung otomatis (2 unit × 6×6 = 72 m²). <b>Hari</b> = lama sewa: hari ke-1 100%, hari ke-2 dst ${fmtQty(num(D().settings.tarif_hari_tambahan ?? 0.3) * 100)}% per hari.</div></div>
-      <div class="pe-head"><span>Barang</span><span>Spek / Ukuran</span><span>Jumlah</span><span>Hari</span><span>Harga estimasi</span><span>Harga vendor</span><span>Tgl pasang</span><span>Tgl bongkar</span><span>Lokasi</span><span class="right">Subtotal riil</span><span></span></div>
+      <div class="pe-head"><span>Barang</span><span>Spek / Ukuran</span><span>Jumlah</span><span>Hari</span><span>${peInt() ? '' : 'Harga estimasi'}</span><span>${peInt() ? 'Harga sewa' : 'Harga vendor'}</span><span>Tgl pasang</span><span>Tgl bongkar</span><span>Lokasi</span><span class="right">Subtotal riil</span><span></span></div>
       <div id="pe-rows"></div>
     </div></div>
     <div class="pe-total" id="pe-tot"></div>`}`;
@@ -1038,12 +1053,12 @@ function renderPERows(root) {
         <select class="select sm" data-f="satuan" data-i="${i}" style="margin-top:4px">${satuanOpts(it.satuan)}</select>
         <div class="xs" id="pe-calc-${i}" style="margin-top:3px">${peCalcText(it)}</div></div>
       <div><span class="ml">Lama sewa (hari)</span><input class="input sm tnum" type="number" min="1" step="1" data-f="hari" data-i="${i}" value="${Math.max(1, Math.round(num(it.hari) || 1))}"><div class="xs muted" id="pe-hf-${i}" style="margin-top:3px">${peHariText(it)}</div></div>
-      <div><span class="ml">Harga estimasi</span><input class="input sm tnum money" inputmode="numeric" data-f="harga_estimasi_satuan" data-i="${i}" value="${fmtNum(it.harga_estimasi_satuan)}"></div>
-      <div><span class="ml">Harga vendor</span><input class="input sm tnum money" inputmode="numeric" data-f="harga_vendor_satuan" data-i="${i}" value="${fmtNum(it.harga_vendor_satuan)}"></div>
+      ${peInt() ? '<div class="pe-noest"></div>' : `<div><span class="ml">Harga estimasi</span><input class="input sm tnum money" inputmode="numeric" data-f="harga_estimasi_satuan" data-i="${i}" value="${fmtNum(it.harga_estimasi_satuan)}"></div>`}
+      <div><span class="ml">${peInt() ? 'Harga sewa' : 'Harga vendor'}</span><input class="input sm tnum money" inputmode="numeric" data-f="harga_vendor_satuan" data-i="${i}" value="${fmtNum(it.harga_vendor_satuan)}"></div>
       <div><span class="ml">Tgl pasang</span><input class="input sm" type="date" data-f="tanggal_pasang" data-i="${i}" value="${esc(it.tanggal_pasang)}"></div>
       <div><span class="ml">Tgl bongkar</span><input class="input sm" type="date" data-f="tanggal_bongkar" data-i="${i}" value="${esc(it.tanggal_bongkar)}"></div>
       <div><span class="ml">Lokasi</span><input class="input sm" data-f="lokasi" data-i="${i}" value="${esc(it.lokasi)}"></div>
-      <div class="pe-sub right"><span class="ml">Subtotal riil</span><b class="tnum" id="pe-sub-${i}">${rp(subRiil(it, peTarif()))}</b><div class="xs muted tnum" id="pe-sube-${i}">est. ${rp(subEst(it, peTarif()))}</div></div>
+      <div class="pe-sub right"><span class="ml">Subtotal riil</span><b class="tnum" id="pe-sub-${i}">${rp(subRiil(it, peTarif()))}</b>${peInt() ? '' : `<div class="xs muted tnum" id="pe-sube-${i}">est. ${rp(subEst(it, peTarif()))}</div>`}</div>
       <div class="pe-del"><button class="btn btn-ghost btn-icon btn-sm tx-bad" data-del="${i}" type="button" aria-label="Hapus baris">${ic('trash', 16)}</button></div>
     </div>`).join('') : `<div style="padding:8px 0">${emptyState('Belum ada barang', 'Pilih vendor & barang dari katalog lalu klik Tambah.', 'box')}</div>`;
   updatePETotals(root);
@@ -1082,6 +1097,7 @@ function updatePETotals(root) {
     if (b) b.textContent = 'est. ' + rp(e);
   });
   const t = root.querySelector('#pe-tot');
+  if (t && peInt()) { t.innerHTML = `<div><div class="l">Jumlah baris</div><div class="v">${PE.items.length}</div></div><div><div class="l">Total tagihan ke panitia</div><div class="v tx-primary">${rp(riil)}</div></div>`; return; }
   if (t) t.innerHTML = `<div><div class="l">Jumlah baris</div><div class="v">${PE.items.length}</div></div>
     <div><div class="l">Total estimasi (panitia)</div><div class="v">${rp(est)}</div></div>
     <div><div class="l">Total biaya riil (vendor)</div><div class="v tx-primary">${rp(riil)}</div></div>
@@ -1230,7 +1246,7 @@ function openBayarForm(opt = {}) {
   const m = Modal.open({
     title: edit ? 'Edit Pembayaran Vendor' : 'Catat Pembayaran Vendor', sub: 'Satu transfer/tunai bisa dibagi ke beberapa acara sekaligus — termasuk potongan harga dari vendor (opsional).', size: 'xl',
     body: `
-      <div class="field"><label><span>Pilih rekanan vendor <span class="req">*</span></span><span class="small tx-bad" id="pm-owed"></span></label><select class="select" id="pm-vendor">${vendorOpts(vendor, 'Pilih vendor', false)}</select></div>
+      <div class="field"><label><span>Pilih rekanan vendor <span class="req">*</span></span><span class="small tx-bad" id="pm-owed"></span></label><select class="select" id="pm-vendor">${selectOpts(d.vendor.filter((v) => v.jenis !== 'Internal' || v.id_vendor === vendor).map((v) => ({ value: v.id_vendor, label: v.nama_vendor })), vendor, 'Pilih vendor')}</select></div>
       <div class="form-grid" style="margin-top:14px">
         <div class="field"><label>Tanggal pembayaran <span class="req">*</span></label><input class="input" type="date" id="pm-tgl" value="${edit ? edit.tanggal_bayar : App.today}"></div>
         <div class="field"><label>Metode pembayaran</label>${seg('pm-metode', [{ value: 'Transfer', label: ic('checkCircle', 15) + ' Transfer Bank' }, { value: 'Tunai', label: ic('wallet', 15) + ' Tunai' }], metode)}</div>
@@ -1666,15 +1682,16 @@ AdminViews.vendor = {
       <div class="row wrap"><button class="btn btn-soft" data-act="new-user">${ic('user', 16)} Buat Akun</button><button class="btn btn-primary" data-act="new-vendor">${ic('plus', 17)} Tambah Vendor</button></div></div>
     <div class="grid-3 stagger">
       ${d.vendor.length ? d.vendor.map((v, i) => {
-        const av = d.fin.av.filter((x) => x.id_vendor === v.id_vendor);
+        const av = v.jenis === 'Internal' ? (d.fin.internal || []).filter((x) => x.id_vendor === v.id_vendor) : d.fin.av.filter((x) => x.id_vendor === v.id_vendor);
         const sisa = av.reduce((s, x) => s + Math.max(0, x.sisa), 0), tag = av.reduce((s, x) => s + x.tagihan, 0);
         const akun = d.users.filter((u) => u.id_vendor === v.id_vendor);
         const nb = d.katalog.filter((k) => k.id_vendor === v.id_vendor && k.aktif).length;
         return `<div class="card" style="--i:${i};display:flex;flex-direction:column;gap:12px">
           <div class="row" style="gap:12px"><span class="li-ic mint" style="width:48px;height:48px;font-size:15px">${initials(v.nama_vendor)}</span>
-            <div class="grow"><div class="bold" style="font-family:var(--font-head);font-size:15.5px">${esc(v.nama_vendor)}</div><div class="small muted">${esc(v.pic || '-')} • ${esc(v.kontak || '-')}</div></div>
+            <div class="grow"><div class="bold" style="font-family:var(--font-head);font-size:15.5px">${esc(v.nama_vendor)}</div><div class="small muted">${esc(v.pic || '-')} • ${esc(v.kontak || '-')}</div>
+              <div style="margin-top:4px">${v.jenis === 'Internal' ? badge('Vendor Internal', 'b-info no-dot') : badge('Vendor Luar', 'b-neu no-dot')}</div></div>
             ${v.aktif ? '' : badge('Nonaktif', 'b-neu')}</div>
-          <div class="v-stat" style="margin:0"><div><div class="l">Total tagihan</div><div class="v" style="font-size:15px">${rpShort(tag)}</div></div><div class="${sisa ? '' : 'g'}"><div class="l">Sisa</div><div class="v ${sisa ? 'tx-bad' : ''}" style="font-size:15px">${rpShort(sisa)}</div></div></div>
+          <div class="v-stat" style="margin:0"><div><div class="l">${v.jenis === 'Internal' ? 'Tagihan ke panitia' : 'Total tagihan'}</div><div class="v" style="font-size:15px">${rpShort(tag)}</div></div><div class="${sisa ? '' : 'g'}"><div class="l">Sisa</div><div class="v ${sisa ? 'tx-bad' : ''}" style="font-size:15px">${rpShort(sisa)}</div></div></div>
           <div class="small muted">${ic('tag', 13)} ${nb} barang katalog • ${ic('wallet', 13)} ${esc(v.rekening || 'Rekening belum diisi')}</div>
           <div class="small">${ic('user', 13)} Akun: ${akun.length ? akun.map((u) => `<b>${esc(u.username)}</b>${u.aktif ? '' : ' (nonaktif)'}`).join(', ') : '<span class="tx-warn">belum ada akun login</span>'}</div>
           <div class="row wrap" style="margin-top:auto"><button class="btn btn-soft btn-sm" data-act="edit-vendor" data-id="${v.id_vendor}">${ic('edit', 14)} Edit</button>
@@ -1707,6 +1724,8 @@ function openVendorForm(v) {
     title: v.id_vendor ? 'Edit Vendor' : 'Tambah Vendor', size: 'lg',
     body: `<form class="form-grid" id="f-vnd">
       <div class="field full"><label>Nama vendor <span class="req">*</span></label><input class="input" name="nama_vendor" value="${esc(v.nama_vendor)}" placeholder="mis. Berkah Jaya Tenda & Rigging"></div>
+      <div class="field full"><label>Jenis vendor</label>${seg('vnd-jenis', [{ value: 'Luar', label: ic('store', 15) + ' Vendor Luar' }, { value: 'Internal', label: ic('home', 15) + ' Vendor Internal (Pondok)' }], v.jenis === 'Internal' ? 'Internal' : 'Luar')}
+        <span class="hint"><b>Luar</b>: dibayar oleh Admin (seperti biasa). <b>Internal</b>: unit pondok yang mengelola barang sendiri, menagih panitia langsung, dan membuat nota sendiri — tagihannya terpisah dari setoran panitia ke Admin.</span></div>
       <div class="field"><label>Nama PIC</label><input class="input" name="pic" value="${esc(v.pic)}"></div>
       <div class="field"><label>No. WhatsApp PIC</label><input class="input" name="kontak" value="${esc(v.kontak)}" inputmode="tel" placeholder="08xxxxxxxxxx"></div>
       <div class="field full"><label>Rekening pembayaran</label><input class="input" name="rekening" value="${esc(v.rekening)}" placeholder="mis. BSI 7144702611 a.n. Berkah Jaya"></div>
@@ -1721,6 +1740,7 @@ function openVendorForm(v) {
     const f = Object.fromEntries(new FormData(form));
     if (!f.nama_vendor.trim()) return toast('Nama vendor wajib diisi.', 'warn');
     f.id_vendor = v.id_vendor || '';
+    f.jenis = segVal(m, 'vnd-jenis') || 'Luar';
     if (v.id_vendor) f.aktif = form.aktif.checked; else delete f.aktif;
     await App.write('saveVendor', f, { btn: e.currentTarget });
   });

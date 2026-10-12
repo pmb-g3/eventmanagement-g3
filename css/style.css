@@ -818,3 +818,12 @@ button.wa-btn { cursor: pointer; }
   .wb-row { flex-wrap: wrap; }
   .wb-st { max-width: none; width: 100%; text-align: left; padding-left: 30px; }
 }
+
+/* ===== v1.8 — Vendor internal ===== */
+.logo-stage { display: flex; flex-direction: column; align-items: flex-start; }
+.logo-box { width: 100%; max-width: 340px; aspect-ratio: 170 / 70; border: 2px dashed var(--border-2); border-radius: 12px; background: repeating-conic-gradient(var(--card-2) 0 25%, var(--card) 0 50%) 0 0 / 16px 16px; display: grid; place-items: center; text-align: center; padding: 8px; overflow: hidden; }
+.logo-box img { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; display: block; }
+.pe-noest { min-height: 1px; }
+.vj-badge { margin-left: 6px; }
+.mini-kpis.mk-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 768px) { .mini-kpis.mk-3 { grid-template-columns: 1fr 1fr; } .mini-kpis.mk-3 > :last-child { grid-column: 1 / -1; } }

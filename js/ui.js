@@ -218,7 +218,7 @@ const Modal = {
     root.appendChild(bd);
     document.body.style.overflow = 'hidden';
     this.stack.push({ bd, onClose, dismissable });
-    setTimeout(() => { const f = bd.querySelector('input:not([type=hidden]):not([type=file]):not([readonly]), select, textarea'); if (f && window.innerWidth > 768) f.focus(); }, 60);
+    setTimeout(() => { const f = bd.querySelector('[data-autofocus]') || bd.querySelector('input:not([type=hidden]):not([type=file]):not([readonly]), select, textarea'); if (f && window.innerWidth > 768) f.focus(); }, 60);
     return bd.querySelector('.modal');
   },
   close() {

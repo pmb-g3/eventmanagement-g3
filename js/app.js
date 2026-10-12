@@ -2,8 +2,8 @@
  *  APP.JS — inti aplikasi: login, sesi, router, kerangka tampilan
  * ===================================================================== */
 
-const FRONTEND_VERSION = '1.7.0'; // harus sama dengan <meta name="app-version"> di index.html
-const MIN_BACKEND = '1.7.0'; // versi Kode.gs minimal untuk frontend ini
+const FRONTEND_VERSION = '1.8.0'; // harus sama dengan <meta name="app-version"> di index.html
+const MIN_BACKEND = '1.8.0'; // versi Kode.gs minimal untuk frontend ini
 
 const ADMIN_NAV = [
   { r: 'beranda', label: 'Beranda & Pengingat', short: 'Beranda', icon: 'home', badge: () => App.reminderCount() },
@@ -23,6 +23,14 @@ const VENDOR_NAV = [
   { r: 'acara', label: 'Acara Saya', short: 'Acara Saya', icon: 'calendar' },
   { r: 'bukti', label: 'Bukti Bayar', short: 'Bukti Bayar', icon: 'receipt' },
   { r: 'profil', label: 'Profil', short: 'Profil', icon: 'user' }
+];
+
+const INTERNAL_NAV = [
+  { r: 'beranda', label: 'Beranda', short: 'Beranda', icon: 'home' },
+  { r: 'acara', label: 'Acara & Tagihan', short: 'Acara', icon: 'calendar' },
+  { r: 'bayar', label: 'Pembayaran Panitia', short: 'Bayar', icon: 'wallet' },
+  { r: 'katalog', label: 'Barang Saya', short: 'Barang', icon: 'tag' },
+  { r: 'profil', label: 'Profil & Nota', short: 'Profil', icon: 'user' }
 ];
 
 const App = {
@@ -94,6 +102,7 @@ const App = {
     if (save) { this.lastSync = Date.now(); Store.saveCache(d); }
   },
   get isAdmin() { return this.data && this.data.role === 'admin'; },
+  get isInternal() { return !!(this.data && this.data.role === 'vendor' && this.data.internal); },
   get today() { return (this.data && this.data.today) || toYMD(new Date()); },
   vName(id) { const v = this.maps.vendor[id]; return v ? v.nama_vendor : '—'; },
   acara(id) { return this.maps.acara[id] || { nama_acara: '(acara terhapus)' }; },
@@ -278,7 +287,7 @@ const App = {
   },
 
   /* ---------- Kerangka (sidebar, topbar, bottom nav) ---------- */
-  get nav() { return this.isAdmin ? ADMIN_NAV : VENDOR_NAV; },
+  get nav() { return this.isAdmin ? ADMIN_NAV : this.isInternal ? INTERNAL_NAV : VENDOR_NAV; },
   showSkeletonShell() {
     document.getElementById('app-shell').hidden = false;
     document.getElementById('view').innerHTML = `<div class="sk sk-hero"></div><div class="kpi-grid" style="margin-top:20px">${'<div class="sk sk-kpi"></div>'.repeat(4)}</div>
@@ -292,7 +301,7 @@ const App = {
     document.getElementById('sidebar').innerHTML = `
       <div class="brand"><span class="logo-mark"></span><div><div class="brand-name">${esc(cfg.APP_NAME)}</div><div class="brand-sub">${esc(cfg.APP_SUB)}</div></div></div>
       <div class="campus-pill"><span class="row"><span class="dot"></span>${esc(cfg.KAMPUS)}</span><b>${esc(cfg.KOTA)}</b></div>
-      <div class="nav">${admin ? '<div class="nav-sec">Administrasi & Logistik</div>' : '<div class="nav-sec">Portal Vendor</div>'}
+      <div class="nav">${admin ? '<div class="nav-sec">Administrasi & Logistik</div>' : (this.isInternal ? '<div class="nav-sec">Vendor Internal Pondok</div>' : '<div class="nav-sec">Portal Vendor</div>')}
         ${this.nav.map((n) => {
           const b = n.badge ? n.badge() : 0;
           return `<a class="nav-item" href="#/${n.r}" data-nav="${n.r}">${ic(n.icon, 19)}<span>${n.label}</span>${b ? `<span class="nb">${b}</span>` : ''}</a>`;
@@ -304,15 +313,15 @@ const App = {
         <button class="btn btn-ghost btn-xs" data-act="logout">${ic('logout', 14)} Keluar</button></div></div>`;
     const bell = this.reminderCount();
     document.getElementById('topbar').innerHTML = `
-      <div class="top-brand"><span class="logo-mark" style="width:36px;height:36px;border-radius:11px"></span><div class="stack" style="gap:0;min-width:0"><div class="brand-name ellipsis">${admin ? 'G3 Darussalam' : 'Portal Vendor'}</div><div class="small muted ellipsis">${admin ? '<span class="badge b-ok no-dot" style="padding:0 8px;font-size:10px">Admin</span>' : esc(vendorName)}</div></div></div>
+      <div class="top-brand"><span class="logo-mark" style="width:36px;height:36px;border-radius:11px"></span><div class="stack" style="gap:0;min-width:0"><div class="brand-name ellipsis">${admin ? 'G3 Darussalam' : this.isInternal ? 'Vendor Internal' : 'Portal Vendor'}</div><div class="small muted ellipsis">${admin ? '<span class="badge b-ok no-dot" style="padding:0 8px;font-size:10px">Admin</span>' : esc(vendorName)}</div></div></div>
       ${admin ? `<form class="search" id="top-search"><span>${ic('search', 17)}</span><input type="search" id="top-q" placeholder="Cari acara, barang, atau rekanan vendor..."></form>` : '<div class="spacer"></div>'}
       <div class="spacer"></div>
       <span class="top-pill">${ic('calendar', 15)} ${hijri(this.today)} / ${tgl(this.today)}</span>
       <button class="icon-btn" id="btn-sync" data-act="sync" aria-label="Muat ulang data" title="Muat ulang data">${ic('refresh', 18)}</button>
       <button class="icon-btn top-theme" data-act="theme" aria-label="Ganti tema" title="Ganti tema">${ic(th ? 'sun' : 'moon', 18)}</button>
       <button class="icon-btn" data-act="bell" aria-label="Pengingat" title="Pengingat">${ic('bell', 18)}${bell ? `<span class="dot">${bell}</span>` : ''}</button>
-      <div class="user-chip" data-act="${admin ? 'go' : 'go'}" data-r="${admin ? 'pengaturan' : 'profil'}" title="Profil"><div class="stack" style="gap:0"><span class="n ellipsis">${esc(u.nama || '')}</span><span class="r">${admin ? 'Super Admin' : 'Rekan Vendor'}</span></div><span class="avatar">${initials(u.nama)}</span></div>`;
-    const bottom = admin ? ADMIN_NAV.filter((n) => ADMIN_BOTTOM.includes(n.r)) : VENDOR_NAV;
+      <div class="user-chip" data-act="${admin ? 'go' : 'go'}" data-r="${admin ? 'pengaturan' : 'profil'}" title="Profil"><div class="stack" style="gap:0"><span class="n ellipsis">${esc(u.nama || '')}</span><span class="r">${admin ? 'Super Admin' : this.isInternal ? 'Vendor Internal' : 'Rekan Vendor'}</span></div><span class="avatar">${initials(u.nama)}</span></div>`;
+    const bottom = admin ? ADMIN_NAV.filter((n) => ADMIN_BOTTOM.includes(n.r)) : this.nav;
     document.getElementById('bottom-nav').innerHTML = bottom.map((n) => {
       const b = n.badge ? n.badge() : 0;
       return `<a class="bn-item" href="#/${n.r}" data-nav="${n.r}" style="text-decoration:none"><span class="bi">${ic(n.icon, 21)}</span><span class="ellipsis" style="max-width:100%">${n.short}</span>${b ? `<span class="nb">${b}</span>` : ''}</a>`;
@@ -362,7 +371,7 @@ const App = {
   go(r) { location.hash = '#/' + r; },
   renderView(animate) {
     if (!this.data) return;
-    const views = this.isAdmin ? AdminViews : VendorViews;
+    const views = this.isAdmin ? AdminViews : this.isInternal ? InternalViews : VendorViews;
     const v = views[this.route.name] || views.beranda;
     const el = document.getElementById('view');
     const y = window.scrollY;
